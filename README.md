@@ -26,6 +26,51 @@
 
 ---
 
+## 사용 API
+
+### 1. hasdata — 인스타그램 스크래핑
+
+| 항목       | 내용                                                                     |
+| ---------- | ------------------------------------------------------------------------ |
+| 용도       | 인스타그램 계정의 최신 게시물 목록 가져오기                              |
+| 엔드포인트 | `GET https://api.hasdata.com/scrape/instagram/profile?handle={username}` |
+| 인증       | `x-api-key` 헤더                                                         |
+| 응답 필드  | `id`, `caption`, `displayUrl`, `timestamp`, `url`                        |
+| 사용 파일  | `src/services/instagram-api.js`                                          |
+
+**응답 예시:**
+
+```json
+{
+  "latestPosts": [
+    {
+      "id": "...",
+      "caption": "인스타툰 47화",
+      "displayUrl": "https://...",
+      "timestamp": "2026-05-16T07:34:58.000Z",
+      "url": "https://www.instagram.com/p/.../"
+    }
+  ]
+}
+```
+
+---
+
+### 2. OCR.space — 이미지 텍스트 인식
+
+| 항목       | 내용                                                     |
+| ---------- | -------------------------------------------------------- |
+| 용도       | 캡션에 화수가 없을 때 게시물 이미지에서 텍스트 추출      |
+| 엔드포인트 | `GET https://api.ocr.space/parse/imageurl`               |
+| 인증       | `apikey` 쿼리 파라미터                                   |
+| 설정       | `language=kor`, `OCREngine=2`, `isOverlayRequired=false` |
+| 무료 한도  | 25,000회 / 월                                            |
+| 사용 파일  | `src/services/ocr-service.js`                            |
+
+> **Engine 2** 선택 이유: 기본 Engine 1보다 스타일 폰트와 이미지 내 숫자 인식률이 높음
+
+---
+
 ## 기술 스택
 
 | 분류                | 라이브러리 / 서비스                                   |
@@ -130,30 +175,30 @@ toon-notifier-app/
 
 ## 작업 분담 보고서
 
-| 구분 | 항목 | 내용 |
-| :---: | ---- | ---- |
-| 👤 **나** | 서비스 기획 | 인스타툰 알림 앱 아이디어 및 전체 방향 설정 |
-| 👤 **나** | 요구사항 정의 | 기능 목록, 에피소드 감지 방식, UI 흐름 결정 |
-| 👤 **나** | API 키 발급 | hasdata, OCR.space 계정 생성 및 키 제공 |
-| 👤 **나** | 기술 결정 | OCR 엔진 선택 (OCR.space Engine 2 지정) |
-| 👤 **나** | QA 테스트 | 실기기(Expo Go)에서 기능 테스트 및 버그 리포트 |
-| 👤 **나** | 예외 케이스 발굴 | 완결화 표기, 해시태그 형식, 중복 알림, 화수 null 등 발견 및 수정 요청 |
-| 👤 **나** | 키워드 전략 개선 | 긴 시리즈 제목 오탐 가능성 발견 및 개선 방향 제시 |
-| 👤 **나** | 사용성 개선 | 드래그 투 디스미스, `@` 입력 처리 등 UX 불편 직접 발견 |
-| 🤖 **Claude** | 전체 아키텍처 | 서비스 레이어 분리, AsyncStorage 데이터 모델 (`toon_notifier_v2`) 설계 |
-| 🤖 **Claude** | 에피소드 감지 | 캡션 키워드 매칭 + `n화` / `n편` / `ep.n` / `#n` 화수 추출 정규식 구현 |
-| 🤖 **Claude** | OCR 연동 | OCR.space API 통합 (`ocr-service.js`), 이미지 → 텍스트 변환 흐름 구현 |
-| 🤖 **Claude** | 하이브리드 감지 | 캡션 키워드 없음 → OCR / 캡션 화수 없음 → OCR 폴백 2단계 구조 설계 |
-| 🤖 **Claude** | OCR 화수 추출 | 괄호 숫자 `(2,`, 줄 단위 독립 숫자 패턴 추가 (`extractEpisodeNumberFromOCR`) |
-| 🤖 **Claude** | 완결 처리 | `완`/`완결` 패턴 감지 → 화수 없을 시 `lastEpisode + 1` 가상 화수 부여 |
-| 🤖 **Claude** | 키워드 강화 | 긴 제목 오탐 방지 — 가장 긴 단어 2개만 캡션 매칭에 사용 |
-| 🤖 **Claude** | 중복 알림 방지 | `hasNewEpisode`가 이미 `true`이면 알림 재발송 차단 |
-| 🤖 **Claude** | 백그라운드 실행 | `expo-background-fetch` + `expo-task-manager` 1분 인터벌 태스크 등록 |
-| 🤖 **Claude** | 로컬 푸시 알림 | `expo-notifications`로 새 에피소드 / 완결 알림 메시지 구분 전송 |
-| 🤖 **Claude** | UI 구현 | 카드 리스트, NEW/구독중 섹션 분리, NEW 배지, 이모지 아이콘 자동 매핑 |
-| 🤖 **Claude** | 바텀시트 모달 | `PanResponder` 드래그 투 디스미스, TextInput 충돌 없이 전체 영역 적용 |
-| 🤖 **Claude** | 스와이프 삭제 | `react-native-gesture-handler` Swipeable 좌스와이프 삭제 구현 |
-| 🤖 **Claude** | 버그 수정 | stale props 방지, firstCheck 기준점, `@` 입력 처리, 고정 게시물 대응 |
+|     구분      | 항목             | 내용                                                                         |
+| :-----------: | ---------------- | ---------------------------------------------------------------------------- |
+|   👤 **나**   | 서비스 기획      | 인스타툰 알림 앱 아이디어 및 전체 방향 설정                                  |
+|   👤 **나**   | 요구사항 정의    | 기능 목록, 에피소드 감지 방식, UI 흐름 결정                                  |
+|   👤 **나**   | API 키 발급      | hasdata, OCR.space 계정 생성 및 키 제공                                      |
+|   👤 **나**   | 기술 결정        | OCR 엔진 선택 (OCR.space Engine 2 지정)                                      |
+|   👤 **나**   | QA 테스트        | 실기기(Expo Go)에서 기능 테스트 및 버그 리포트                               |
+|   👤 **나**   | 예외 케이스 발굴 | 완결화 표기, 해시태그 형식, 중복 알림, 화수 null 등 발견 및 수정 요청        |
+|   👤 **나**   | 키워드 전략 개선 | 긴 시리즈 제목 오탐 가능성 발견 및 개선 방향 제시                            |
+|   👤 **나**   | 사용성 개선      | 드래그 투 디스미스, `@` 입력 처리 등 UX 불편 직접 발견                       |
+| 🤖 **Claude** | 전체 아키텍처    | 서비스 레이어 분리, AsyncStorage 데이터 모델 (`toon_notifier_v2`) 설계       |
+| 🤖 **Claude** | 에피소드 감지    | 캡션 키워드 매칭 + `n화` / `n편` / `ep.n` / `#n` 화수 추출 정규식 구현       |
+| 🤖 **Claude** | OCR 연동         | OCR.space API 통합 (`ocr-service.js`), 이미지 → 텍스트 변환 흐름 구현        |
+| 🤖 **Claude** | 하이브리드 감지  | 캡션 키워드 없음 → OCR / 캡션 화수 없음 → OCR 폴백 2단계 구조 설계           |
+| 🤖 **Claude** | OCR 화수 추출    | 괄호 숫자 `(2,`, 줄 단위 독립 숫자 패턴 추가 (`extractEpisodeNumberFromOCR`) |
+| 🤖 **Claude** | 완결 처리        | `완`/`완결` 패턴 감지 → 화수 없을 시 `lastEpisode + 1` 가상 화수 부여        |
+| 🤖 **Claude** | 키워드 강화      | 긴 제목 오탐 방지 — 가장 긴 단어 2개만 캡션 매칭에 사용                      |
+| 🤖 **Claude** | 중복 알림 방지   | `hasNewEpisode`가 이미 `true`이면 알림 재발송 차단                           |
+| 🤖 **Claude** | 백그라운드 실행  | `expo-background-fetch` + `expo-task-manager` 1분 인터벌 태스크 등록         |
+| 🤖 **Claude** | 로컬 푸시 알림   | `expo-notifications`로 새 에피소드 / 완결 알림 메시지 구분 전송              |
+| 🤖 **Claude** | UI 구현          | 카드 리스트, NEW/구독중 섹션 분리, NEW 배지, 이모지 아이콘 자동 매핑         |
+| 🤖 **Claude** | 바텀시트 모달    | `PanResponder` 드래그 투 디스미스, TextInput 충돌 없이 전체 영역 적용        |
+| 🤖 **Claude** | 스와이프 삭제    | `react-native-gesture-handler` Swipeable 좌스와이프 삭제 구현                |
+| 🤖 **Claude** | 버그 수정        | stale props 방지, firstCheck 기준점, `@` 입력 처리, 고정 게시물 대응         |
 
 ---
 

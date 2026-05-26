@@ -1,20 +1,25 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from "react";
 import {
-  View, Text, StyleSheet, SectionList,
-  TouchableOpacity, RefreshControl, SafeAreaView,
-} from 'react-native';
-import { getSortedToons, checkAllToons } from '../services/toon-service';
-import ToonCard from '../components/ToonCard';
-import AddToonModal from '../components/AddToonModal';
-import EmptyState from '../components/EmptyState';
-import { useTheme } from '../context/ThemeContext';
+  View,
+  Text,
+  StyleSheet,
+  SectionList,
+  TouchableOpacity,
+  RefreshControl,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { getSortedToons, checkAllToons } from "../services/toon-service";
+import ToonCard from "../components/ToonCard";
+import AddToonModal from "../components/AddToonModal";
+import EmptyState from "../components/EmptyState";
+import { useTheme } from "../context/ThemeContext";
 
 export default function HomeScreen() {
   const { theme, isDark, toggleTheme } = useTheme();
   const [toons, setToons] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
-  const [statusText, setStatusText] = useState('');
+  const [statusText, setStatusText] = useState("");
 
   const loadToons = useCallback(async () => {
     const sorted = await getSortedToons();
@@ -32,9 +37,9 @@ export default function HomeScreen() {
       await checkAllToons(setStatusText);
       await loadToons();
     } catch (e) {
-      console.warn('자동 확인 실패:', e.message);
+      console.warn("자동 확인 실패:", e.message);
     } finally {
-      setStatusText('');
+      setStatusText("");
     }
   };
 
@@ -44,42 +49,44 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  const newToons = toons.filter(t => t.hasNewEpisode);
-  const readToons = toons.filter(t => !t.hasNewEpisode);
+  const newToons = toons.filter((t) => t.hasNewEpisode);
+  const readToons = toons.filter((t) => !t.hasNewEpisode);
 
   const sections = [];
-  if (newToons.length) sections.push({ title: '새 에피소드', data: newToons });
-  if (readToons.length) sections.push({
-    title: newToons.length ? '읽은 툰' : '구독 중',
-    data: readToons,
-  });
+  if (newToons.length) sections.push({ title: "새 에피소드", data: newToons });
+  if (readToons.length)
+    sections.push({
+      title: newToons.length ? "읽은 툰" : "구독 중",
+      data: readToons,
+    });
 
   const s = styles(theme);
 
   return (
     <SafeAreaView style={s.container}>
       <View style={s.header}>
-        <Text style={s.headerTitle}>인스타툰</Text>
+        <Text style={s.headerTitle}>인스타툰 알리미</Text>
         <View style={s.headerActions}>
           <TouchableOpacity style={s.iconButton} onPress={toggleTheme}>
-            <Text style={s.iconButtonText}>{isDark ? '☀️' : '🌙'}</Text>
+            <Text style={s.iconButtonText}>{isDark ? "☀️" : "🌙"}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={s.addButton} onPress={() => setModalVisible(true)}>
+          <TouchableOpacity
+            style={s.addButton}
+            onPress={() => setModalVisible(true)}
+          >
             <Text style={s.addButtonText}>+</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {statusText ? (
-        <Text style={s.statusText}>{statusText}</Text>
-      ) : null}
+      {statusText ? <Text style={s.statusText}>{statusText}</Text> : null}
 
       {toons.length === 0 ? (
         <EmptyState onAdd={() => setModalVisible(true)} />
       ) : (
         <SectionList
           sections={sections}
-          keyExtractor={item => item.id}
+          keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <ToonCard toon={item} onUpdate={loadToons} />
           )}
@@ -107,41 +114,59 @@ export default function HomeScreen() {
   );
 }
 
-const styles = (theme) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.bg },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    backgroundColor: theme.header,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border,
-  },
-  headerTitle: { fontSize: 22, fontWeight: '700', color: theme.text },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  iconButton: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: theme.card,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  iconButtonText: { fontSize: 16 },
-  addButton: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: theme.accent,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  addButtonText: { color: '#fff', fontSize: 22, fontWeight: '300', marginTop: -1 },
-  statusText: {
-    textAlign: 'center', color: theme.accent,
-    fontSize: 13, paddingVertical: 8,
-  },
-  sectionHeader: {
-    fontSize: 12, fontWeight: '600', color: theme.sectionText,
-    letterSpacing: 0.5,
-    paddingHorizontal: 24, paddingTop: 20, paddingBottom: 8,
-    textTransform: 'uppercase',
-  },
-  listContent: { paddingBottom: 24 },
-});
+const styles = (theme) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: theme.bg },
+    header: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingHorizontal: 24,
+      paddingVertical: 16,
+      backgroundColor: theme.header,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+    },
+    headerTitle: { fontSize: 22, fontWeight: "700", color: theme.text },
+    headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+    iconButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: theme.card,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    iconButtonText: { fontSize: 16 },
+    addButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: theme.accent,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    addButtonText: {
+      color: "#fff",
+      fontSize: 22,
+      fontWeight: "300",
+      marginTop: -1,
+    },
+    statusText: {
+      textAlign: "center",
+      color: theme.accent,
+      fontSize: 13,
+      paddingVertical: 8,
+    },
+    sectionHeader: {
+      fontSize: 12,
+      fontWeight: "600",
+      color: theme.sectionText,
+      letterSpacing: 0.5,
+      paddingHorizontal: 24,
+      paddingTop: 20,
+      paddingBottom: 8,
+      textTransform: "uppercase",
+    },
+    listContent: { paddingBottom: 24 },
+  });

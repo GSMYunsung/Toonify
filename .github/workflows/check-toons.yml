@@ -2,7 +2,7 @@ name: Check Toons
 
 on:
   schedule:
-    - cron: '*/10 * * * *'  # 10분마다 실행
+    - cron: '0 * * * *'  # 1시간마다 실행
   workflow_dispatch:          # GitHub Actions 탭에서 수동 실행 가능
 
 jobs:

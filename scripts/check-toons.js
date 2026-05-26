@@ -181,6 +181,10 @@ async function main() {
   console.log(`툰 ${toons.length}개, 디바이스 ${Object.keys(tokenByDevice).length}개`);
 
   for (const toon of toons) {
+    if (toon.has_new_episode) {
+      console.log(`[${toon.username}] 이미 새 편 있음 — 건너뜀`);
+      continue;
+    }
     try {
       const result = await checkToon(toon);
       if (result?.found) {

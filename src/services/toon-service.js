@@ -103,6 +103,45 @@ export async function markAsRead(id) {
   }
 }
 
+function buildUnreadPosts(toon, allPosts) {
+  const readEp = toon.readEpisode || 0;
+  const allWords = toon.seriesName.split(/\s+/).filter((w) => w.length >= 2);
+  const seen = new Set();
+  const result = [];
+
+  for (const post of allPosts) {
+    const cap = post.caption || '';
+    const matched = allWords.some((w) => cap.includes(w));
+    if (!matched) continue;
+    const ep = extractEpisodeNumber(cap);
+    if (ep !== null && ep > readEp && !seen.has(ep)) {
+      seen.add(ep);
+      result.push({ episode: ep, url: post.url });
+    }
+  }
+
+  return result.sort((a, b) => a.episode - b.episode);
+}
+
+export async function advanceEpisode(id, episode, remainingPosts) {
+  const toons = await getToons();
+  const t = toons.find((t) => t.id === id);
+  if (!t) return;
+  t.readEpisode = episode;
+  t.unreadPosts = remainingPosts;
+  t.hasNewEpisode = remainingPosts.length > 0;
+  t.updatedAt = new Date().toISOString();
+  await save(toons);
+
+  supabase.from('toons').update({
+    read_episode: episode,
+    has_new_episode: remainingPosts.length > 0,
+    updated_at: t.updatedAt,
+  }).eq('id', id).then(({ error }) => {
+    if (error) console.warn('[Supabase] advanceEpisode 실패:', error.message);
+  });
+}
+
 async function updateToon(id, updates) {
   const toons = await getToons();
   const idx = toons.findIndex((t) => t.id === id);
@@ -197,6 +236,7 @@ export async function checkToon(toonInput) {
     );
 
     if (isNewEpisode || isNewPost) {
+      const unreadPosts = buildUnreadPosts(toon, allPosts);
       await updateToon(toon.id, {
         hasNewEpisode: true,
         ...(isNewEpisode ? { lastEpisode: ep } : {}),
@@ -204,6 +244,7 @@ export async function checkToon(toonInput) {
         lastEpisodeTitle: caption.slice(0, 80),
         lastThumbnailUrl: post.thumbnailUrl,
         lastPostUrl: post.url,
+        unreadPosts,
       });
       if (!toon.hasNewEpisode) {
         await sendLocalNotification(

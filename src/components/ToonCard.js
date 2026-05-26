@@ -1,7 +1,7 @@
 import React, { useRef } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Linking } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
-import { deleteToon, markAsRead, checkToon } from "../services/toon-service";
+import { deleteToon, markAsRead, checkToon, advanceEpisode } from "../services/toon-service";
 import { getEmoji } from "../utils/emoji-icon";
 import { useTheme } from "../context/ThemeContext";
 
@@ -19,7 +19,15 @@ export default function ToonCard({ toon, onUpdate }) {
 
   const handleCardPress = async () => {
     if (!toon.hasNewEpisode) return;
-    await markAsRead(toon.id);
+    const unreadPosts = toon.unreadPosts || [];
+    if (unreadPosts.length > 0) {
+      const next = unreadPosts[0];
+      await Linking.openURL(next.url);
+      await advanceEpisode(toon.id, next.episode, unreadPosts.slice(1));
+    } else if (toon.lastPostUrl) {
+      await Linking.openURL(toon.lastPostUrl);
+      await markAsRead(toon.id);
+    }
     onUpdate();
   };
 

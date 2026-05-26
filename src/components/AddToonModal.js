@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, Modal, TextInput,
-  TouchableOpacity, KeyboardAvoidingView, Platform, Alert,
+  TouchableOpacity, KeyboardAvoidingView, ScrollView, Platform, Alert,
   Animated, PanResponder,
 } from 'react-native';
 import { addToon } from '../services/toon-service';
@@ -60,49 +60,54 @@ export default function AddToonModal({ visible, onClose, onAdded }) {
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={s.container} {...panResponder.panHandlers}>
         <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={onClose} />
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}>
           <Animated.View style={[s.sheet, { transform: [{ translateY }] }]}>
             <View style={s.dragArea}>
               <View style={s.handle} />
               <Text style={s.title}>툰 추가하기</Text>
             </View>
 
-            <Text style={s.label}>인스타 계정</Text>
-            <TextInput
-              style={s.input}
-              placeholder="@username"
-              placeholderTextColor={theme.textSub}
-              value={username}
-              onChangeText={setUsername}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={s.label}>인스타 계정</Text>
+              <TextInput
+                style={s.input}
+                placeholder="@username"
+                placeholderTextColor={theme.textSub}
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
 
-            <Text style={s.label}>시리즈 이름</Text>
-            <TextInput
-              style={s.input}
-              placeholder="예: 하루방툰"
-              placeholderTextColor={theme.textSub}
-              value={seriesName}
-              onChangeText={setSeriesName}
-            />
+              <Text style={s.label}>시리즈 이름</Text>
+              <TextInput
+                style={s.input}
+                placeholder="예: 하루방툰"
+                placeholderTextColor={theme.textSub}
+                value={seriesName}
+                onChangeText={setSeriesName}
+              />
 
-            <Text style={s.label}>마지막으로 본 화수</Text>
-            <TextInput
-              style={s.input}
-              placeholder="처음이면 0"
-              placeholderTextColor={theme.textSub}
-              value={lastEpisode}
-              onChangeText={setLastEpisode}
-              keyboardType="number-pad"
-            />
+              <Text style={s.label}>마지막으로 본 화수</Text>
+              <TextInput
+                style={s.input}
+                placeholder="처음이면 0"
+                placeholderTextColor={theme.textSub}
+                value={lastEpisode}
+                onChangeText={setLastEpisode}
+                keyboardType="number-pad"
+              />
 
-            <TouchableOpacity style={s.addButton} onPress={handleAdd}>
-              <Text style={s.addButtonText}>추가하기</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={s.cancelButton} onPress={onClose}>
-              <Text style={s.cancelButtonText}>취소</Text>
-            </TouchableOpacity>
+              <TouchableOpacity style={s.addButton} onPress={handleAdd}>
+                <Text style={s.addButtonText}>추가하기</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.cancelButton} onPress={onClose}>
+                <Text style={s.cancelButtonText}>취소</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </Animated.View>
         </KeyboardAvoidingView>
       </View>

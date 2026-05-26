@@ -1,0 +1,31 @@
+export const lightTheme = {
+  bg: '#FFFFFF',
+  card: '#F7F7F7',
+  text: '#0F0F0F',
+  textSub: '#888888',
+  accent: '#A594F9',
+  accentBg: '#F0EDFF',
+  border: '#F0F0F0',
+  inputBorder: '#E8E8E8',
+  header: '#FFFFFF',
+  sheet: '#FFFFFF',
+  handle: '#E0E0E0',
+  sectionText: '#888888',
+  delete: '#FF4D6D',
+};
+
+export const darkTheme = {
+  bg: '#0F0F0F',
+  card: '#1C1C1C',
+  text: '#FFFFFF',
+  textSub: '#777777',
+  accent: '#A594F9',
+  accentBg: '#231E35',
+  border: '#242424',
+  inputBorder: '#2E2E2E',
+  header: '#0F0F0F',
+  sheet: '#1A1A1A',
+  handle: '#3A3A3A',
+  sectionText: '#666666',
+  delete: '#FF4D6D',
+};

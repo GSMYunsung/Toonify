@@ -7,8 +7,10 @@ import { getSortedToons, checkAllToons } from '../services/toon-service';
 import ToonCard from '../components/ToonCard';
 import AddToonModal from '../components/AddToonModal';
 import EmptyState from '../components/EmptyState';
+import { useTheme } from '../context/ThemeContext';
 
 export default function HomeScreen() {
+  const { theme, isDark, toggleTheme } = useTheme();
   const [toons, setToons] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -46,26 +48,30 @@ export default function HomeScreen() {
   const readToons = toons.filter(t => !t.hasNewEpisode);
 
   const sections = [];
-  if (newToons.length) sections.push({ title: '🔔 새 에피소드', data: newToons });
+  if (newToons.length) sections.push({ title: '새 에피소드', data: newToons });
   if (readToons.length) sections.push({
     title: newToons.length ? '읽은 툰' : '구독 중',
     data: readToons,
   });
 
+  const s = styles(theme);
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>인스타툰 알림</Text>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => setModalVisible(true)}
-        >
-          <Text style={styles.addButtonText}>+</Text>
-        </TouchableOpacity>
+    <SafeAreaView style={s.container}>
+      <View style={s.header}>
+        <Text style={s.headerTitle}>인스타툰</Text>
+        <View style={s.headerActions}>
+          <TouchableOpacity style={s.iconButton} onPress={toggleTheme}>
+            <Text style={s.iconButtonText}>{isDark ? '☀️' : '🌙'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.addButton} onPress={() => setModalVisible(true)}>
+            <Text style={s.addButtonText}>+</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {statusText ? (
-        <Text style={styles.statusText}>{statusText}</Text>
+        <Text style={s.statusText}>{statusText}</Text>
       ) : null}
 
       {toons.length === 0 ? (
@@ -78,16 +84,16 @@ export default function HomeScreen() {
             <ToonCard toon={item} onUpdate={loadToons} />
           )}
           renderSectionHeader={({ section: { title } }) => (
-            <Text style={styles.sectionHeader}>{title}</Text>
+            <Text style={s.sectionHeader}>{title}</Text>
           )}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#A594F9"
+              tintColor={theme.accent}
             />
           }
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={s.listContent}
           stickySectionHeadersEnabled={false}
         />
       )}
@@ -101,32 +107,41 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FA' },
+const styles = (theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.bg },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
     paddingVertical: 16,
-    backgroundColor: '#fff',
+    backgroundColor: theme.header,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: theme.border,
   },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: '#1A1A2E' },
+  headerTitle: { fontSize: 22, fontWeight: '700', color: theme.text },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  iconButton: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: theme.card,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  iconButtonText: { fontSize: 16 },
   addButton: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: '#A594F9',
+    backgroundColor: theme.accent,
     justifyContent: 'center', alignItems: 'center',
   },
   addButtonText: { color: '#fff', fontSize: 22, fontWeight: '300', marginTop: -1 },
   statusText: {
-    textAlign: 'center', color: '#A594F9',
+    textAlign: 'center', color: theme.accent,
     fontSize: 13, paddingVertical: 8,
   },
   sectionHeader: {
-    fontSize: 13, fontWeight: '600', color: '#888',
-    paddingHorizontal: 20, paddingTop: 16, paddingBottom: 6,
+    fontSize: 12, fontWeight: '600', color: theme.sectionText,
+    letterSpacing: 0.5,
+    paddingHorizontal: 24, paddingTop: 20, paddingBottom: 8,
+    textTransform: 'uppercase',
   },
   listContent: { paddingBottom: 24 },
 });

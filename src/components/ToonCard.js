@@ -3,17 +3,19 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { deleteToon, markAsRead, checkToon } from "../services/toon-service";
 import { getEmoji } from "../utils/emoji-icon";
+import { useTheme } from "../context/ThemeContext";
 
 export default function ToonCard({ toon, onUpdate }) {
+  const { theme } = useTheme();
   const swipeableRef = useRef(null);
   const emoji = getEmoji(toon.seriesName);
 
   const episodeLabel =
     toon.hasNewEpisode && toon.lastEpisode
-      ? `${toon.lastEpisode}화까지 나옴 / ${toon.readEpisode || 0}화까지 봄`
+      ? `${toon.lastEpisode}화까지 나옴 · ${toon.readEpisode || 0}화까지 봄`
       : toon.readEpisode || toon.lastEpisode
         ? `${toon.readEpisode || toon.lastEpisode}화까지 봄`
-        : `${toon.lastEpisode}화까지 나옴 / 아직 읽은 편 없음`;
+        : `${toon.lastEpisode}화까지 나옴 · 아직 읽은 편 없음`;
 
   const handleCardPress = async () => {
     if (!toon.hasNewEpisode) return;
@@ -25,10 +27,7 @@ export default function ToonCard({ toon, onUpdate }) {
     try {
       const result = await checkToon(toon);
       if (result.found) {
-        Alert.alert(
-          "새 에피소드!",
-          `${toon.seriesName} ${result.episode}화가 올라왔어요!`,
-        );
+        Alert.alert("새 에피소드!", `${toon.seriesName} ${result.episode}화가 올라왔어요!`);
       } else {
         Alert.alert("확인 완료", "새 에피소드가 없습니다.");
       }
@@ -45,10 +44,12 @@ export default function ToonCard({ toon, onUpdate }) {
   };
 
   const renderRightActions = () => (
-    <TouchableOpacity style={styles.deleteAction} onPress={handleDelete}>
-      <Text style={styles.deleteIcon}>🗑️</Text>
+    <TouchableOpacity style={styles(theme).deleteAction} onPress={handleDelete}>
+      <Text style={{ fontSize: 20 }}>🗑️</Text>
     </TouchableOpacity>
   );
+
+  const s = styles(theme);
 
   return (
     <Swipeable
@@ -57,95 +58,86 @@ export default function ToonCard({ toon, onUpdate }) {
       overshootRight={false}
     >
       <TouchableOpacity
-        style={[styles.card, toon.hasNewEpisode && styles.cardNew]}
+        style={[s.card, toon.hasNewEpisode && s.cardNew]}
         onPress={handleCardPress}
         activeOpacity={toon.hasNewEpisode ? 0.7 : 1}
       >
-        <View style={styles.iconContainer}>
-          <Text style={styles.iconEmoji}>{emoji}</Text>
+        <View style={s.iconContainer}>
+          <Text style={s.iconEmoji}>{emoji}</Text>
         </View>
 
-        <View style={styles.info}>
-          <Text style={styles.title} numberOfLines={1}>
-            {toon.seriesName}
-          </Text>
-          <Text style={styles.author}>@{toon.username}</Text>
-          <Text style={styles.episode}>{episodeLabel}</Text>
+        <View style={s.info}>
+          <View style={s.titleRow}>
+            <Text style={s.title} numberOfLines={1}>{toon.seriesName}</Text>
+            {toon.hasNewEpisode && (
+              <View style={s.badgeNew}>
+                <Text style={s.badgeText}>NEW</Text>
+              </View>
+            )}
+          </View>
+          <Text style={s.author}>@{toon.username}</Text>
+          <Text style={s.episode}>{episodeLabel}</Text>
         </View>
 
-        <View style={styles.actions}>
-          {toon.hasNewEpisode && (
-            <View style={styles.badgeNew}>
-              <Text style={styles.badgeText}>NEW</Text>
-            </View>
-          )}
-          <TouchableOpacity style={styles.checkButton} onPress={handleCheckNow}>
-            <Text style={styles.checkIcon}>↻</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity style={s.checkButton} onPress={handleCheckNow}>
+          <Text style={s.checkIcon}>↻</Text>
+        </TouchableOpacity>
       </TouchableOpacity>
     </Swipeable>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = (theme) => StyleSheet.create({
   card: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
+    backgroundColor: theme.card,
     marginHorizontal: 16,
-    marginVertical: 5,
+    marginVertical: 4,
     borderRadius: 16,
-    padding: 14,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    padding: 16,
   },
   cardNew: {
     borderLeftWidth: 3,
-    borderLeftColor: "#A594F9",
+    borderLeftColor: theme.accent,
   },
   iconContainer: {
-    width: 52,
-    height: 52,
+    width: 48, height: 48,
     borderRadius: 14,
-    backgroundColor: "#F0EDFF",
+    backgroundColor: theme.accentBg,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
+    marginRight: 14,
   },
-  iconEmoji: { fontSize: 26 },
+  iconEmoji: { fontSize: 24 },
   info: { flex: 1 },
-  title: { fontSize: 15, fontWeight: "600", color: "#1A1A2E", marginBottom: 2 },
-  author: { fontSize: 12, color: "#999", marginBottom: 3 },
-  episode: { fontSize: 12, color: "#666" },
-  actions: { alignItems: "flex-end", gap: 6 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 },
+  title: { fontSize: 15, fontWeight: "700", color: theme.text, flexShrink: 1 },
+  author: { fontSize: 12, color: theme.textSub, marginBottom: 3 },
+  episode: { fontSize: 12, color: theme.textSub },
   badgeNew: {
-    backgroundColor: "#FF4D6D",
+    backgroundColor: theme.accent,
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
-  badgeText: { color: "#fff", fontSize: 10, fontWeight: "700" },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   checkButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "#F0EDFF",
+    width: 32, height: 32,
+    borderRadius: 16,
+    backgroundColor: theme.accentBg,
     justifyContent: "center",
     alignItems: "center",
+    marginLeft: 8,
   },
-  checkIcon: { fontSize: 18, color: "#A594F9" },
+  checkIcon: { fontSize: 18, color: theme.accent },
   deleteAction: {
-    backgroundColor: "#FF4D6D",
+    backgroundColor: theme.delete,
     justifyContent: "center",
     alignItems: "center",
     width: 72,
-    marginVertical: 5,
+    marginVertical: 4,
     marginRight: 16,
     borderRadius: 16,
   },
-  deleteIcon: { fontSize: 22 },
 });

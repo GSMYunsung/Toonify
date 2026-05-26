@@ -5,8 +5,10 @@ import {
   Animated, PanResponder,
 } from 'react-native';
 import { addToon } from '../services/toon-service';
+import { useTheme } from '../context/ThemeContext';
 
 export default function AddToonModal({ visible, onClose, onAdded }) {
+  const { theme } = useTheme();
   const [username, setUsername] = useState('');
   const [seriesName, setSeriesName] = useState('');
   const [lastEpisode, setLastEpisode] = useState('');
@@ -15,8 +17,6 @@ export default function AddToonModal({ visible, onClose, onAdded }) {
 
   const panResponder = useRef(
     PanResponder.create({
-      // 캡처 단계에서 아래 드래그 선점 → 배경·핸들·타이틀 전부 적용
-      // TextInput 타이핑(dy≈0)은 가로채지 않음
       onMoveShouldSetPanResponderCapture: (_, { dy }) => dy > 5,
       onPanResponderMove: (_, { dy }) => {
         if (dy > 0) translateY.setValue(dy);
@@ -24,9 +24,7 @@ export default function AddToonModal({ visible, onClose, onAdded }) {
       onPanResponderRelease: (_, { dy, vy }) => {
         if (dy > 100 || vy > 0.5) {
           Animated.timing(translateY, {
-            toValue: 600,
-            duration: 200,
-            useNativeDriver: true,
+            toValue: 600, duration: 200, useNativeDriver: true,
           }).start(() => {
             translateY.setValue(0);
             onClose();
@@ -56,50 +54,54 @@ export default function AddToonModal({ visible, onClose, onAdded }) {
     onClose();
   };
 
+  const s = styles(theme);
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      {/* 전체 컨테이너에 panHandlers — 배경 + 시트 모두 드래그 가능 */}
-      <View style={styles.container} {...panResponder.panHandlers}>
-        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
+      <View style={s.container} {...panResponder.panHandlers}>
+        <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={onClose} />
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
-            <View style={styles.dragArea}>
-              <View style={styles.handle} />
-              <Text style={styles.title}>툰 추가하기</Text>
+          <Animated.View style={[s.sheet, { transform: [{ translateY }] }]}>
+            <View style={s.dragArea}>
+              <View style={s.handle} />
+              <Text style={s.title}>툰 추가하기</Text>
             </View>
 
-            <Text style={styles.label}>인스타 계정</Text>
+            <Text style={s.label}>인스타 계정</Text>
             <TextInput
-              style={styles.input}
+              style={s.input}
               placeholder="@username"
+              placeholderTextColor={theme.textSub}
               value={username}
               onChangeText={setUsername}
               autoCapitalize="none"
               autoCorrect={false}
             />
 
-            <Text style={styles.label}>시리즈 이름</Text>
+            <Text style={s.label}>시리즈 이름</Text>
             <TextInput
-              style={styles.input}
+              style={s.input}
               placeholder="예: 하루방툰"
+              placeholderTextColor={theme.textSub}
               value={seriesName}
               onChangeText={setSeriesName}
             />
 
-            <Text style={styles.label}>마지막으로 본 화수</Text>
+            <Text style={s.label}>마지막으로 본 화수</Text>
             <TextInput
-              style={styles.input}
+              style={s.input}
               placeholder="처음이면 0"
+              placeholderTextColor={theme.textSub}
               value={lastEpisode}
               onChangeText={setLastEpisode}
               keyboardType="number-pad"
             />
 
-            <TouchableOpacity style={styles.addButton} onPress={handleAdd}>
-              <Text style={styles.addButtonText}>추가하기</Text>
+            <TouchableOpacity style={s.addButton} onPress={handleAdd}>
+              <Text style={s.addButtonText}>추가하기</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
-              <Text style={styles.cancelButtonText}>취소</Text>
+            <TouchableOpacity style={s.cancelButton} onPress={onClose}>
+              <Text style={s.cancelButtonText}>취소</Text>
             </TouchableOpacity>
           </Animated.View>
         </KeyboardAvoidingView>
@@ -108,37 +110,35 @@ export default function AddToonModal({ visible, onClose, onAdded }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = (theme) => StyleSheet.create({
   container: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    backgroundColor: theme.sheet,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
     padding: 24, paddingBottom: 40,
   },
-  dragArea: {
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingBottom: 4,
-  },
+  dragArea: { alignItems: 'center', marginBottom: 16, paddingBottom: 4 },
   handle: {
     width: 36, height: 4, borderRadius: 2,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: theme.handle,
+    marginBottom: 18,
+  },
+  title: { fontSize: 18, fontWeight: '700', color: theme.text, alignSelf: 'flex-start' },
+  label: { fontSize: 13, fontWeight: '600', color: theme.textSub, marginBottom: 8 },
+  input: {
+    borderWidth: 1.5, borderColor: theme.inputBorder,
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13,
+    fontSize: 15, color: theme.text,
+    backgroundColor: theme.card,
     marginBottom: 16,
   },
-  title: { fontSize: 18, fontWeight: '700', color: '#1A1A2E', alignSelf: 'flex-start' },
-  label: { fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 6 },
-  input: {
-    borderWidth: 1.5, borderColor: '#E8E8E8',
-    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 15, color: '#1A1A2E', marginBottom: 16,
-  },
   addButton: {
-    backgroundColor: '#A594F9',
-    borderRadius: 14, paddingVertical: 14,
+    backgroundColor: theme.accent,
+    borderRadius: 14, paddingVertical: 15,
     alignItems: 'center', marginBottom: 10,
   },
   addButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   cancelButton: { alignItems: 'center', paddingVertical: 10 },
-  cancelButtonText: { color: '#999', fontSize: 15 },
+  cancelButtonText: { color: theme.textSub, fontSize: 15 },
 });

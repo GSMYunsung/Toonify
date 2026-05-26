@@ -7,6 +7,7 @@ import Constants from "expo-constants";
 import HomeScreen from "./src/screens/HomeScreen";
 import { getDeviceId } from "./src/services/toon-service";
 import { supabase } from "./src/services/supabase";
+import { ThemeProvider } from "./src/context/ThemeContext";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -54,9 +55,11 @@ export default function App() {
   }, []);
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <StatusBar style="dark" />
-      <HomeScreen />
-    </GestureHandlerRootView>
+    <ThemeProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <StatusBar style="auto" />
+        <HomeScreen />
+      </GestureHandlerRootView>
+    </ThemeProvider>
   );
 }

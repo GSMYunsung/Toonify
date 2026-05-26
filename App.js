@@ -1,24 +1,11 @@
-import { useEffect } from 'react';
-import { StatusBar } from 'expo-status-bar';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import * as Notifications from 'expo-notifications';
-import * as BackgroundFetch from 'expo-background-fetch';
-import * as TaskManager from 'expo-task-manager';
-import HomeScreen from './src/screens/HomeScreen';
-import { checkAllToons } from './src/services/toon-service';
-
-const BG_TASK = 'toon-background-check';
-
-TaskManager.defineTask(BG_TASK, async () => {
-  try {
-    const updated = await checkAllToons();
-    return updated
-      ? BackgroundFetch.BackgroundFetchResult.NewData
-      : BackgroundFetch.BackgroundFetchResult.NoData;
-  } catch {
-    return BackgroundFetch.BackgroundFetchResult.Failed;
-  }
-});
+import { useEffect } from "react";
+import { Platform } from "react-native";
+import { StatusBar } from "expo-status-bar";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import * as Notifications from "expo-notifications";
+import HomeScreen from "./src/screens/HomeScreen";
+import { getDeviceId } from "./src/services/toon-service";
+import { supabase } from "./src/services/supabase";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -31,13 +18,34 @@ Notifications.setNotificationHandler({
 export default function App() {
   useEffect(() => {
     async function setup() {
-      await Notifications.requestPermissionsAsync();
-      const isRegistered = await TaskManager.isTaskRegisteredAsync(BG_TASK);
-      if (!isRegistered) {
-        await BackgroundFetch.registerTaskAsync(BG_TASK, {
-          minimumInterval: 60,
+      const { status } = await Notifications.requestPermissionsAsync();
+
+      if (status === 'granted') {
+        try {
+          const [tokenData, deviceId] = await Promise.all([
+            Notifications.getExpoPushTokenAsync(),
+            getDeviceId(),
+          ]);
+          const token = tokenData.data;
+          supabase.from('push_tokens').upsert(
+            { token, platform: Platform.OS, device_id: deviceId },
+            { onConflict: 'token' }
+          ).then(({ error }) => { if (error) console.warn('[Supabase] push token 저장 실패:', error.message); });
+        } catch (e) {
+          console.warn('[Supabase] push token 가져오기 실패:', e.message);
+        }
+      }
+
+      if (Platform.OS === "android") {
+        await Notifications.setNotificationChannelAsync("default", {
+          name: "인스타툰 알림",
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: "#A594F9",
+          sound: "default",
         });
       }
+
     }
     setup();
   }, []);

@@ -17,7 +17,7 @@ jobs:
           node-version: '22'
 
       - name: 의존성 설치
-        run: npm install --no-save @supabase/supabase-js node-fetch
+        run: npm install --no-save @supabase/supabase-js ws node-fetch
 
       - name: 인스타툰 체크 실행
         run: node scripts/check-toons.js

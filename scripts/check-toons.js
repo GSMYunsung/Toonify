@@ -2,13 +2,16 @@
 // toon-service.js의 checkToon 로직을 Node.js로 재작성
 
 const { createClient } = require('@supabase/supabase-js');
+const WS = require('ws');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const HASDATA_KEY = process.env.HASDATA_KEY;
 const OCR_SPACE_KEY = process.env.OCR_SPACE_KEY;
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+  realtime: { transport: WS },
+});
 
 // ─── 화수 추출 (캡션용) ───────────────────────────────────────────
 function extractEpisodeNumber(text) {

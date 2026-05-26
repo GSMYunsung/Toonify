@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
 import { fetchLatestPosts } from "./instagram-api";
 import {
@@ -7,14 +8,28 @@ import {
   isCompleteEpisode,
 } from "../hooks/useKeywordDetector";
 import { extractTextFromImage } from "./ocr-service";
+import { supabase } from "./supabase";
 
 const STORAGE_KEY = "toon_notifier_v2";
+const DEVICE_ID_KEY = "device_id";
 
 function uuid() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
   });
+}
+
+export async function getDeviceId() {
+  try {
+    const stored = await AsyncStorage.getItem(DEVICE_ID_KEY);
+    if (stored) return stored;
+    const newId = uuid();
+    await AsyncStorage.setItem(DEVICE_ID_KEY, newId);
+    return newId;
+  } catch {
+    return uuid();
+  }
 }
 
 export async function getToons() {
@@ -44,12 +59,30 @@ export async function addToon(data) {
   };
   toons.push(newToon);
   await save(toons);
+
+  getDeviceId().then(deviceId => {
+    supabase.from('toons').insert({
+      id: newToon.id,
+      username: newToon.username,
+      series_name: newToon.seriesName,
+      last_episode: newToon.lastEpisode || 0,
+      read_episode: newToon.readEpisode || 0,
+      has_new_episode: false,
+      device_id: deviceId,
+      added_at: newToon.addedAt,
+      updated_at: newToon.updatedAt,
+    }).then(({ error }) => { if (error) console.warn('[Supabase] addToon 실패:', error.message); });
+  });
+
   return newToon;
 }
 
 export async function deleteToon(id) {
   const toons = await getToons();
   await save(toons.filter((t) => t.id !== id));
+
+  supabase.from('toons').delete().eq('id', id)
+    .then(({ error }) => { if (error) console.warn('[Supabase] deleteToon 실패:', error.message); });
 }
 
 export async function markAsRead(id) {
@@ -60,6 +93,13 @@ export async function markAsRead(id) {
     t.readEpisode = t.lastEpisode || t.readEpisode || 0;
     t.updatedAt = new Date().toISOString();
     await save(toons);
+
+    supabase.from('toons').update({
+      has_new_episode: false,
+      read_episode: t.readEpisode,
+      updated_at: t.updatedAt,
+    }).eq('id', id)
+      .then(({ error }) => { if (error) console.warn('[Supabase] markAsRead 실패:', error.message); });
   }
 }
 
@@ -213,7 +253,12 @@ async function sendLocalNotification(seriesName, episode, isComplete = false) {
     body = `새 게시물이 올라왔어요. 지금 확인해보세요!`;
   }
   await Notifications.scheduleNotificationAsync({
-    content: { title, body, sound: true },
+    content: {
+      title,
+      body,
+      sound: true,
+      ...(Platform.OS === 'android' && { channelId: 'default' }),
+    },
     trigger: null,
   });
 }

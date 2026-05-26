@@ -1,0 +1,28 @@
+name: Check Toons
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'  # 10분마다 실행
+  workflow_dispatch:          # GitHub Actions 탭에서 수동 실행 가능
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 의존성 설치
+        run: npm install --no-save @supabase/supabase-js node-fetch
+
+      - name: 인스타툰 체크 실행
+        run: node scripts/check-toons.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          HASDATA_KEY: ${{ secrets.HASDATA_KEY }}
+          OCR_SPACE_KEY: ${{ secrets.OCR_SPACE_KEY }}

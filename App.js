@@ -3,6 +3,7 @@ import { Platform } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
 import HomeScreen from "./src/screens/HomeScreen";
 import { getDeviceId } from "./src/services/toon-service";
 import { supabase } from "./src/services/supabase";
@@ -23,7 +24,9 @@ export default function App() {
       if (status === 'granted') {
         try {
           const [tokenData, deviceId] = await Promise.all([
-            Notifications.getExpoPushTokenAsync(),
+            Notifications.getExpoPushTokenAsync({
+              projectId: Constants.expoConfig?.extra?.eas?.projectId,
+            }),
             getDeviceId(),
           ]);
           const token = tokenData.data;

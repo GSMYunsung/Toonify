@@ -260,6 +260,58 @@ export async function checkToon(toonInput) {
   return { found: false };
 }
 
+// 배치가 Supabase를 업데이트했지만 로컬에 반영 안 된 경우 동기화
+export async function syncFromSupabase() {
+  try {
+    const deviceId = await getDeviceId();
+    const { data: remoteToons } = await supabase
+      .from('toons')
+      .select('id, has_new_episode, last_episode')
+      .eq('device_id', deviceId);
+
+    if (!remoteToons?.length) return;
+
+    const toons = await getToons();
+    let changed = false;
+
+    for (const remote of remoteToons) {
+      const local = toons.find((t) => t.id === remote.id);
+      if (!local) continue;
+      if (remote.has_new_episode && !local.hasNewEpisode) {
+        local.hasNewEpisode = true;
+        if (remote.last_episode > (local.lastEpisode || 0)) {
+          local.lastEpisode = remote.last_episode;
+        }
+        changed = true;
+      }
+    }
+
+    if (changed) await save(toons);
+  } catch (e) {
+    console.warn('[syncFromSupabase] 실패:', e.message);
+  }
+}
+
+// hasNewEpisode는 있는데 unreadPosts가 없는 툰의 링크 목록 채우기
+export async function fillMissingUnreadPosts() {
+  const toons = await getToons();
+  const needsFill = toons.filter(
+    (t) => t.hasNewEpisode && (!t.unreadPosts || t.unreadPosts.length === 0)
+  );
+
+  for (const toon of needsFill) {
+    try {
+      const allPosts = await fetchLatestPosts(toon.username);
+      const unreadPosts = buildUnreadPosts(toon, allPosts);
+      if (unreadPosts.length > 0) {
+        await updateToon(toon.id, { unreadPosts });
+      }
+    } catch (e) {
+      console.warn(`[fillMissingUnreadPosts] @${toon.username} 실패:`, e.message);
+    }
+  }
+}
+
 export async function checkAllToons(onProgress) {
   const toons = await getToons();
   let updated = false;

@@ -6,9 +6,10 @@ import {
   SectionList,
   TouchableOpacity,
   RefreshControl,
+  AppState,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { getSortedToons, checkAllToons } from "../services/toon-service";
+import { getSortedToons, checkAllToons, syncFromSupabase, fillMissingUnreadPosts } from "../services/toon-service";
 import ToonCard from "../components/ToonCard";
 import AddToonModal from "../components/AddToonModal";
 import EmptyState from "../components/EmptyState";
@@ -26,10 +27,30 @@ export default function HomeScreen() {
     setToons(sorted);
   }, []);
 
+  const syncAndFill = useCallback(async () => {
+    await syncFromSupabase();
+    await fillMissingUnreadPosts();
+    await loadToons();
+  }, [loadToons]);
+
   useEffect(() => {
-    loadToons();
+    const init = async () => {
+      await loadToons();
+      await syncAndFill();
+    };
+    init();
+
     const interval = setInterval(autoCheck, 60 * 1000);
-    return () => clearInterval(interval);
+
+    // 포그라운드 복귀 시 (알림 탭으로 앱 열 때 포함)
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') syncAndFill();
+    });
+
+    return () => {
+      clearInterval(interval);
+      appStateSub.remove();
+    };
   }, []);
 
   const autoCheck = async () => {

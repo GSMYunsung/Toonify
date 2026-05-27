@@ -83,3 +83,88 @@ return { found: false };
 ```
 
 ---
+
+## #3 — EAS 빌드 시 config.js 파일 없음 오류
+
+**날짜:** 2026-05-27
+
+**에러 메시지:**
+```
+None of these files exist:
+  * config(.android.ts|.native.ts|.ts|.android.js|.native.js|.js)
+```
+
+`src/services/supabase.js` 3번 줄: `import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../config';`
+
+**원인:**
+
+`config.js`가 `.gitignore`에 포함되어 있었음. 로컬에선 파일이 존재하지만 EAS 빌드 서버는 git clone으로 코드를 가져오기 때문에 gitignore된 파일은 서버에 존재하지 않음. Metro 번들러가 `config.js`를 찾지 못해 빌드 실패.
+
+**해결 방법:**
+
+API 키를 EAS Secrets에 등록하고, `app.config.js`를 통해 앱 번들에 주입하는 방식으로 전환.
+
+**1. EAS Secrets 등록** (preview + production 환경 각각)
+```bash
+npx eas env:create --environment preview --name HASDATA_KEY --value "..." --visibility secret
+npx eas env:create --environment preview --name OCR_SPACE_KEY --value "..." --visibility secret
+npx eas env:create --environment preview --name SUPABASE_URL --value "..." --visibility secret
+npx eas env:create --environment preview --name SUPABASE_ANON_KEY --value "..." --visibility secret
+# production도 동일하게
+```
+
+**2. `app.json` → `app.config.js` 전환**
+
+`app.config.js`는 Node.js 환경에서 실행되므로 `process.env`로 EAS Secrets를 읽을 수 있음.
+읽은 값을 `extra`에 담아 앱 번들에 포함시킴.
+
+```js
+// app.config.js
+module.exports = {
+  expo: {
+    // ...기존 설정 동일...
+    extra: {
+      HASDATA_KEY: process.env.HASDATA_KEY,
+      OCR_SPACE_KEY: process.env.OCR_SPACE_KEY,
+      SUPABASE_URL: process.env.SUPABASE_URL,
+      SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+      eas: { projectId: "..." },
+    },
+  },
+};
+```
+
+**3. `config.js` 수정 — 실제 키 제거, Constants에서 읽기**
+
+```js
+// config.js (이제 git에 커밋 가능, 실제 키 없음)
+import Constants from 'expo-constants';
+const extra = Constants.expoConfig?.extra ?? {};
+
+export const HASDATA_KEY = extra.HASDATA_KEY;
+export const OCR_SPACE_KEY = extra.OCR_SPACE_KEY;
+export const SUPABASE_URL = extra.SUPABASE_URL;
+export const SUPABASE_ANON_KEY = extra.SUPABASE_ANON_KEY;
+```
+
+**4. `.env.local` 생성 — 로컬 개발용 실제 키 (gitignored)**
+
+Expo SDK 49+는 `.env.local`을 자동으로 로드함. `app.config.js`가 이 값을 `process.env`로 읽어 `extra`에 전달.
+
+```
+# .env.local (gitignored — .env*.local 패턴으로 제외됨)
+HASDATA_KEY=...
+OCR_SPACE_KEY=...
+SUPABASE_URL=...
+SUPABASE_ANON_KEY=...
+```
+
+**5. `.gitignore`에서 `config.js` 제외 항목 삭제**
+
+이제 `config.js`는 실제 키가 없으므로 안전하게 git에 포함.
+
+**키 흐름 요약:**
+- 로컬 개발: `.env.local` → `app.config.js process.env` → `extra` → `Constants.expoConfig.extra`
+- EAS 빌드: EAS Secrets → 빌드 서버 `process.env` → `app.config.js extra` → 앱 번들
+
+---

@@ -40,10 +40,6 @@ module.exports = {
       ],
     ],
     extra: {
-      HASDATA_KEY: process.env.HASDATA_KEY,
-      OCR_SPACE_KEY: process.env.OCR_SPACE_KEY,
-      SUPABASE_URL: process.env.SUPABASE_URL,
-      SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
       eas: {
         projectId: "e5379365-91ef-438c-b10c-5b3ee7bf7007",
       },

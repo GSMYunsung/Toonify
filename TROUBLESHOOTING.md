@@ -156,3 +156,37 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=...
 - EAS 빌드: EAS Secrets → Metro 인라인 치환 → `process.env.EXPO_PUBLIC_*`
 
 ---
+
+**에러 메시지 (3단계) — push_tokens에 데이터가 안 들어감**
+
+`toons` 테이블에는 데이터가 들어가지만 `push_tokens`에는 아무것도 저장되지 않음.
+
+**원인:**
+
+Android 릴리즈 APK(Hermes 엔진)에서 `getExpoPushTokenAsync()`가 실패함.
+Expo 푸시 토큰 발급 과정에서 기기가 먼저 FCM(Firebase Cloud Messaging)에 등록되어야 하는데,
+`google-services.json` 없이 빌드된 APK는 FCM 등록을 못 함.
+
+Expo Go에서 동작하는 이유: Expo Go 앱 자체에 Firebase 설정이 내장되어 있어서 공유 사용.
+
+```
+Expo 푸시 토큰 발급 흐름:
+기기 → FCM 등록 (google-services.json 필요) → Expo 서버 → ExponentPushToken[...]
+```
+
+**해결 방법:**
+
+1. Firebase 콘솔에서 프로젝트 생성 → Android 앱 추가 (패키지명: `com.anonymous.toonnotifierapp`)
+2. `google-services.json` 다운로드 → 프로젝트 루트에 배치
+3. `app.config.js`에 경로 등록:
+
+```js
+android: {
+  // ...
+  googleServicesFile: "./google-services.json",
+},
+```
+
+4. `google-services.json`은 앱 식별자만 포함하므로 git 커밋 가능 (보안은 Firebase Security Rules 담당)
+
+---

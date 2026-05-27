@@ -26,6 +26,7 @@ module.exports = {
       },
       edgeToEdgeEnabled: true,
       package: "com.anonymous.toonnotifierapp",
+      googleServicesFile: "./google-services.json",
     },
     web: {
       favicon: "./assets/favicon.png",

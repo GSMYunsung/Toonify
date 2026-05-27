@@ -87,7 +87,7 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={s.container}>
       <View style={s.header}>
-        <Text style={s.headerTitle}>인스타툰 알리미</Text>
+        <Text style={s.headerTitle}>Toonify</Text>
         <View style={s.headerActions}>
           <TouchableOpacity style={s.iconButton} onPress={toggleTheme}>
             <Text style={s.iconButtonText}>{isDark ? "☀️" : "🌙"}</Text>

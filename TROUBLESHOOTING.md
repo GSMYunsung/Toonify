@@ -84,11 +84,11 @@ return { found: false };
 
 ---
 
-## #3 — EAS 빌드 시 config.js 파일 없음 오류
+## #3 — EAS 빌드 시 config.js 파일 없음 + Supabase 미연결 오류
 
 **날짜:** 2026-05-27
 
-**에러 메시지:**
+**에러 메시지 (1단계):**
 ```
 None of these files exist:
   * config(.android.ts|.native.ts|.ts|.android.js|.native.js|.js)
@@ -98,73 +98,61 @@ None of these files exist:
 
 **원인:**
 
-`config.js`가 `.gitignore`에 포함되어 있었음. 로컬에선 파일이 존재하지만 EAS 빌드 서버는 git clone으로 코드를 가져오기 때문에 gitignore된 파일은 서버에 존재하지 않음. Metro 번들러가 `config.js`를 찾지 못해 빌드 실패.
+`config.js`가 `.gitignore`에 포함되어 있었음. EAS 빌드 서버는 로컬 파일시스템을 아카이브해서 올리지만, gitignore된 파일은 Metro가 찾지 못해 빌드 실패.
 
-**해결 방법:**
+---
 
-API 키를 EAS Secrets에 등록하고, `app.config.js`를 통해 앱 번들에 주입하는 방식으로 전환.
+**에러 메시지 (2단계) — 빌드는 되는데 Supabase에 데이터가 안 들어감**
 
-**1. EAS Secrets 등록** (preview + production 환경 각각)
+빌드 성공 후 앱 실행 시 Supabase에 아무 데이터도 저장되지 않음. 로컬(`npx expo start`)에서는 정상 동작.
+
+**원인:**
+
+`app.json`과 `app.config.js`가 동시에 존재할 때 EAS가 `app.json`을 우선 읽는 경우가 있음.
+`app.json`에는 env var 주입 로직이 없어서 `extra`의 API 키가 `undefined`로 빌드됨.
+
+또한 `app.config.js → extra → Constants.expoConfig.extra` 체인 자체가 EAS 빌드 환경에서 불안정함.
+
+---
+
+**최종 해결 방법:**
+
+`EXPO_PUBLIC_` 접두사 변수를 사용. Metro가 빌드 시 해당 변수를 번들에 직접 인라인 치환하므로 중간 체인 없이 확실하게 동작함.
+
+**1. `app.json` 삭제 — `app.config.js`로 단일화**
+
+두 파일 공존 시 충돌 방지.
+
+**2. EAS env vars 등록** (`EXPO_PUBLIC_` 접두사, `sensitive` visibility)
 ```bash
-npx eas env:create --environment preview --name HASDATA_KEY --value "..." --visibility secret
-npx eas env:create --environment preview --name OCR_SPACE_KEY --value "..." --visibility secret
-npx eas env:create --environment preview --name SUPABASE_URL --value "..." --visibility secret
-npx eas env:create --environment preview --name SUPABASE_ANON_KEY --value "..." --visibility secret
-# production도 동일하게
+npx eas env:create --environment preview --name EXPO_PUBLIC_HASDATA_KEY --value "..." --visibility sensitive
+npx eas env:create --environment preview --name EXPO_PUBLIC_OCR_SPACE_KEY --value "..." --visibility sensitive
+npx eas env:create --environment preview --name EXPO_PUBLIC_SUPABASE_URL --value "..." --visibility sensitive
+npx eas env:create --environment preview --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "..." --visibility sensitive
 ```
 
-**2. `app.json` → `app.config.js` 전환**
-
-`app.config.js`는 Node.js 환경에서 실행되므로 `process.env`로 EAS Secrets를 읽을 수 있음.
-읽은 값을 `extra`에 담아 앱 번들에 포함시킴.
+**3. `config.js` 수정 — `process.env.EXPO_PUBLIC_*`로 직접 읽기**
 
 ```js
-// app.config.js
-module.exports = {
-  expo: {
-    // ...기존 설정 동일...
-    extra: {
-      HASDATA_KEY: process.env.HASDATA_KEY,
-      OCR_SPACE_KEY: process.env.OCR_SPACE_KEY,
-      SUPABASE_URL: process.env.SUPABASE_URL,
-      SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
-      eas: { projectId: "..." },
-    },
-  },
-};
-```
-
-**3. `config.js` 수정 — 실제 키 제거, Constants에서 읽기**
-
-```js
-// config.js (이제 git에 커밋 가능, 실제 키 없음)
-import Constants from 'expo-constants';
-const extra = Constants.expoConfig?.extra ?? {};
-
-export const HASDATA_KEY = extra.HASDATA_KEY;
-export const OCR_SPACE_KEY = extra.OCR_SPACE_KEY;
-export const SUPABASE_URL = extra.SUPABASE_URL;
-export const SUPABASE_ANON_KEY = extra.SUPABASE_ANON_KEY;
+// config.js (git에 커밋 가능, 실제 키 없음)
+export const HASDATA_KEY = process.env.EXPO_PUBLIC_HASDATA_KEY;
+export const OCR_SPACE_KEY = process.env.EXPO_PUBLIC_OCR_SPACE_KEY;
+export const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
+export const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 ```
 
 **4. `.env.local` 생성 — 로컬 개발용 실제 키 (gitignored)**
 
-Expo SDK 49+는 `.env.local`을 자동으로 로드함. `app.config.js`가 이 값을 `process.env`로 읽어 `extra`에 전달.
-
 ```
-# .env.local (gitignored — .env*.local 패턴으로 제외됨)
-HASDATA_KEY=...
-OCR_SPACE_KEY=...
-SUPABASE_URL=...
-SUPABASE_ANON_KEY=...
+# .env.local (.env*.local 패턴으로 gitignore됨)
+EXPO_PUBLIC_HASDATA_KEY=...
+EXPO_PUBLIC_OCR_SPACE_KEY=...
+EXPO_PUBLIC_SUPABASE_URL=...
+EXPO_PUBLIC_SUPABASE_ANON_KEY=...
 ```
-
-**5. `.gitignore`에서 `config.js` 제외 항목 삭제**
-
-이제 `config.js`는 실제 키가 없으므로 안전하게 git에 포함.
 
 **키 흐름 요약:**
-- 로컬 개발: `.env.local` → `app.config.js process.env` → `extra` → `Constants.expoConfig.extra`
-- EAS 빌드: EAS Secrets → 빌드 서버 `process.env` → `app.config.js extra` → 앱 번들
+- 로컬 개발: `.env.local` → Metro 인라인 치환 → `process.env.EXPO_PUBLIC_*`
+- EAS 빌드: EAS Secrets → Metro 인라인 치환 → `process.env.EXPO_PUBLIC_*`
 
 ---

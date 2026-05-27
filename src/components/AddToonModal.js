@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, Modal, TextInput,
   TouchableOpacity, KeyboardAvoidingView, ScrollView, Platform, Alert,
@@ -16,7 +16,7 @@ export default function AddToonModal({ visible, onClose, onAdded, editToon }) {
   const [lastEpisode, setLastEpisode] = useState('');
 
   // 수정 모드 진입 시 기존 값 채우기
-  React.useEffect(() => {
+  useEffect(() => {
     if (editToon) {
       setUsername(editToon.username || '');
       setSeriesName(editToon.seriesName || '');

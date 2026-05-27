@@ -193,11 +193,6 @@ export async function checkToon(toonInput) {
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, 3);
 
-  // 첫 체크(lastPostId 없음)는 기준점만 저장하고 알림 안 보냄
-  if (!toon.lastPostId && posts.length > 0) {
-    await updateToon(toon.id, { lastPostId: posts[0].id });
-    return { found: false };
-  }
   console.log(
     `[checkToon] @${toon.username} — 포스트 ${allPosts.length}개 중 최신 ${posts.length}개 확인`,
   );
@@ -249,7 +244,8 @@ export async function checkToon(toonInput) {
     }
 
     const isNewEpisode = ep !== null && ep > (toon.lastEpisode || 0);
-    const isNewPost = ep === null && post.id && post.id !== toon.lastPostId;
+    // lastPostId가 없으면(첫 체크) ID 비교 건너뜀 — 화수 없는 포스트 오탐 방지
+    const isNewPost = ep === null && post.id && toon.lastPostId && post.id !== toon.lastPostId;
 
     console.log(
       `[checkToon] ep=${ep} isComplete=${isComplete} isNewEpisode=${isNewEpisode} isNewPost=${isNewPost}`,
@@ -277,6 +273,10 @@ export async function checkToon(toonInput) {
     }
   }
 
+  // 새 화수 없음 — lastPostId 기준점 저장 (첫 체크 포함)
+  if (posts.length > 0 && !toon.lastPostId) {
+    await updateToon(toon.id, { lastPostId: posts[0].id });
+  }
   return { found: false };
 }
 

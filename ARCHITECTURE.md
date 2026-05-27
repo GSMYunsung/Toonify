@@ -39,8 +39,9 @@
 toon-notifier-app/
 │
 ├── App.js                         ← 앱 진입점. 알림 권한 요청 + push token 등록
-├── app.json                       ← Expo 설정 (앱 이름, EAS 프로젝트 ID 등)
-├── config.js                      ← API 키 보관 (git에 올리면 안 됨!)
+├── app.config.js                  ← Expo 설정 (앱 이름, EAS 프로젝트 ID, env var 주입)
+├── config.js                      ← API 키 (EXPO_PUBLIC_ 환경변수에서 읽음)
+├── google-services.json           ← Firebase FCM 설정 (Android 푸시 알림)
 │
 ├── scripts/
 │   └── check-toons.js             ← GitHub Actions에서 실행되는 서버 스크립트

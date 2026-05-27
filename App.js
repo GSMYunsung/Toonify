@@ -50,7 +50,6 @@ export default function App() {
           sound: "default",
         });
       }
-
     }
     setup();
   }, []);

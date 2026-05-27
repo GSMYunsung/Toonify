@@ -14,7 +14,7 @@ module.exports = {
     },
     ios: {
       supportsTablet: true,
-      bundleIdentifier: "com.anonymous.toonnotifierapp",
+      bundleIdentifier: "com.choeyunseong.toonify",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },
@@ -25,7 +25,7 @@ module.exports = {
         backgroundColor: "#ffffff",
       },
       edgeToEdgeEnabled: true,
-      package: "com.anonymous.toonnotifierapp",
+      package: "com.choeyunseong.toonify",
       googleServicesFile: "./google-services.json",
     },
     web: {

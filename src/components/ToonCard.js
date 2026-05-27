@@ -85,6 +85,13 @@ export default function ToonCard({ toon, onUpdate }) {
           </View>
           <Text style={s.author}>@{toon.username}</Text>
           <Text style={s.episode}>{episodeLabel}</Text>
+          {toon.hasNewEpisode && (
+            <Text style={s.hint}>
+              {toon.unreadPosts?.length > 0
+                ? `${toon.unreadPosts[0].episode}화 보러가기 →`
+                : '탭해서 보러가기 →'}
+            </Text>
+          )}
         </View>
 
         <TouchableOpacity style={s.checkButton} onPress={handleCheckNow}>
@@ -123,6 +130,7 @@ const styles = (theme) => StyleSheet.create({
   title: { fontSize: 15, fontWeight: "700", color: theme.text, flexShrink: 1 },
   author: { fontSize: 12, color: theme.textSub, marginBottom: 3 },
   episode: { fontSize: 12, color: theme.textSub },
+  hint: { fontSize: 12, color: theme.accent, marginTop: 4, fontWeight: '600' },
   badgeNew: {
     backgroundColor: theme.accent,
     borderRadius: 6,

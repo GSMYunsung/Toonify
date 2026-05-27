@@ -20,6 +20,7 @@ export default function HomeScreen() {
   const [toons, setToons] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [editingToon, setEditingToon] = useState(null);
   const [statusText, setStatusText] = useState("");
 
   const loadToons = useCallback(async () => {
@@ -109,7 +110,7 @@ export default function HomeScreen() {
           sections={sections}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <ToonCard toon={item} onUpdate={loadToons} />
+            <ToonCard toon={item} onUpdate={loadToons} onEdit={setEditingToon} />
           )}
           renderSectionHeader={({ section: { title } }) => (
             <Text style={s.sectionHeader}>{title}</Text>
@@ -129,6 +130,12 @@ export default function HomeScreen() {
       <AddToonModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
+        onAdded={loadToons}
+      />
+      <AddToonModal
+        visible={editingToon !== null}
+        editToon={editingToon}
+        onClose={() => setEditingToon(null)}
         onAdded={loadToons}
       />
     </SafeAreaView>

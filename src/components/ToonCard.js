@@ -1,11 +1,11 @@
 import React, { useRef } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Linking } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Linking, Image } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { deleteToon, markAsRead, checkToon, advanceEpisode } from "../services/toon-service";
 import { getEmoji } from "../utils/emoji-icon";
 import { useTheme } from "../context/ThemeContext";
 
-export default function ToonCard({ toon, onUpdate }) {
+export default function ToonCard({ toon, onUpdate, onEdit }) {
   const { theme } = useTheme();
   const swipeableRef = useRef(null);
   const emoji = getEmoji(toon.seriesName);
@@ -68,10 +68,15 @@ export default function ToonCard({ toon, onUpdate }) {
       <TouchableOpacity
         style={[s.card, toon.hasNewEpisode && s.cardNew]}
         onPress={handleCardPress}
-        activeOpacity={toon.hasNewEpisode ? 0.7 : 1}
+        onLongPress={() => onEdit?.(toon)}
+        activeOpacity={0.7}
       >
         <View style={s.iconContainer}>
-          <Text style={s.iconEmoji}>{emoji}</Text>
+          {toon.lastThumbnailUrl ? (
+            <Image source={{ uri: toon.lastThumbnailUrl }} style={s.thumbnail} />
+          ) : (
+            <Text style={s.iconEmoji}>{emoji}</Text>
+          )}
         </View>
 
         <View style={s.info}>
@@ -117,14 +122,16 @@ const styles = (theme) => StyleSheet.create({
     borderLeftColor: theme.accent,
   },
   iconContainer: {
-    width: 48, height: 48,
+    width: 52, height: 52,
     borderRadius: 14,
     backgroundColor: theme.accentBg,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 14,
+    overflow: 'hidden',
   },
   iconEmoji: { fontSize: 24 },
+  thumbnail: { width: 52, height: 52 },
   info: { flex: 1 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 },
   title: { fontSize: 15, fontWeight: "700", color: theme.text, flexShrink: 1 },

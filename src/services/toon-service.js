@@ -77,6 +77,26 @@ export async function addToon(data) {
   return newToon;
 }
 
+export async function updateToonInfo(id, { seriesName, lastEpisode }) {
+  const toons = await getToons();
+  const t = toons.find((t) => t.id === id);
+  if (!t) return;
+  t.seriesName = seriesName;
+  t.lastEpisode = lastEpisode;
+  t.readEpisode = lastEpisode;
+  t.updatedAt = new Date().toISOString();
+  await save(toons);
+
+  supabase.from('toons').update({
+    series_name: seriesName,
+    last_episode: lastEpisode,
+    read_episode: lastEpisode,
+    updated_at: t.updatedAt,
+  }).eq('id', id).then(({ error }) => {
+    if (error) console.warn('[Supabase] updateToonInfo 실패:', error.message);
+  });
+}
+
 export async function deleteToon(id) {
   const toons = await getToons();
   await save(toons.filter((t) => t.id !== id));

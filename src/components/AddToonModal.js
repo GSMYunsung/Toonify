@@ -4,14 +4,29 @@ import {
   TouchableOpacity, KeyboardAvoidingView, ScrollView, Platform, Alert,
   Animated, PanResponder,
 } from 'react-native';
-import { addToon } from '../services/toon-service';
+import { addToon, updateToonInfo } from '../services/toon-service';
 import { useTheme } from '../context/ThemeContext';
 
-export default function AddToonModal({ visible, onClose, onAdded }) {
+export default function AddToonModal({ visible, onClose, onAdded, editToon }) {
   const { theme } = useTheme();
+  const isEditMode = !!editToon;
+
   const [username, setUsername] = useState('');
   const [seriesName, setSeriesName] = useState('');
   const [lastEpisode, setLastEpisode] = useState('');
+
+  // 수정 모드 진입 시 기존 값 채우기
+  React.useEffect(() => {
+    if (editToon) {
+      setUsername(editToon.username || '');
+      setSeriesName(editToon.seriesName || '');
+      setLastEpisode(String(editToon.readEpisode || editToon.lastEpisode || ''));
+    } else {
+      setUsername('');
+      setSeriesName('');
+      setLastEpisode('');
+    }
+  }, [editToon, visible]);
 
   const translateY = useRef(new Animated.Value(0)).current;
 
@@ -42,11 +57,18 @@ export default function AddToonModal({ visible, onClose, onAdded }) {
       Alert.alert('입력 오류', '인스타 계정과 시리즈 이름을 입력해주세요.');
       return;
     }
-    await addToon({
-      username: cleanUsername,
-      seriesName: seriesName.trim(),
-      lastEpisode: parseInt(lastEpisode) || 0,
-    });
+    if (isEditMode) {
+      await updateToonInfo(editToon.id, {
+        seriesName: seriesName.trim(),
+        lastEpisode: parseInt(lastEpisode) || 0,
+      });
+    } else {
+      await addToon({
+        username: cleanUsername,
+        seriesName: seriesName.trim(),
+        lastEpisode: parseInt(lastEpisode) || 0,
+      });
+    }
     setUsername('');
     setSeriesName('');
     setLastEpisode('');
@@ -64,7 +86,7 @@ export default function AddToonModal({ visible, onClose, onAdded }) {
           <Animated.View style={[s.sheet, { transform: [{ translateY }] }]}>
             <View style={s.dragArea}>
               <View style={s.handle} />
-              <Text style={s.title}>툰 추가하기</Text>
+              <Text style={s.title}>{isEditMode ? '툰 수정하기' : '툰 추가하기'}</Text>
             </View>
 
             <ScrollView
@@ -73,13 +95,14 @@ export default function AddToonModal({ visible, onClose, onAdded }) {
             >
               <Text style={s.label}>인스타 계정</Text>
               <TextInput
-                style={s.input}
+                style={[s.input, isEditMode && s.inputDisabled]}
                 placeholder="@username"
                 placeholderTextColor={theme.textSub}
                 value={username}
                 onChangeText={setUsername}
                 autoCapitalize="none"
                 autoCorrect={false}
+                editable={!isEditMode}
               />
 
               <Text style={s.label}>시리즈 이름</Text>
@@ -102,7 +125,7 @@ export default function AddToonModal({ visible, onClose, onAdded }) {
               />
 
               <TouchableOpacity style={s.addButton} onPress={handleAdd}>
-                <Text style={s.addButtonText}>추가하기</Text>
+                <Text style={s.addButtonText}>{isEditMode ? '수정하기' : '추가하기'}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={s.cancelButton} onPress={onClose}>
                 <Text style={s.cancelButtonText}>취소</Text>
@@ -137,6 +160,9 @@ const styles = (theme) => StyleSheet.create({
     fontSize: 15, color: theme.text,
     backgroundColor: theme.card,
     marginBottom: 16,
+  },
+  inputDisabled: {
+    opacity: 0.4,
   },
   addButton: {
     backgroundColor: theme.accent,

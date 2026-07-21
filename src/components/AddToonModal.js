@@ -14,7 +14,7 @@ import {
   PanResponder,
   ActivityIndicator,
 } from "react-native";
-import { addToon, updateToonInfo } from "../services/toon-service";
+import { addToon, updateToonInfo, checkToon } from "../services/toon-service";
 import * as Clipboard from "expo-clipboard";
 import { fetchPostByUrl } from "../services/instagram-api";
 import { extractTextFromImage } from "../services/ocr-service";
@@ -159,11 +159,13 @@ export default function AddToonModal({ visible, onClose, onAdded, editToon }) {
         lastEpisode: parseInt(lastEpisode) || 0,
       });
     } else {
-      await addToon({
+      const newToon = await addToon({
         username: cleanUsername,
         seriesName: seriesName.trim(),
         lastEpisode: parseInt(lastEpisode) || 0,
       });
+      // 추가 직후 바로 새 에피소드 확인 (비동기, 실패해도 무관)
+      checkToon(newToon).then(() => onAdded()).catch(() => {});
     }
     setUsername("");
     setSeriesName("");

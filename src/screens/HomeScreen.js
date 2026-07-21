@@ -37,15 +37,16 @@ export default function HomeScreen() {
   useEffect(() => {
     const init = async () => {
       await loadToons();
-      await syncAndFill();
+      await syncAndFill(); // 최초 1회만 fillMissingUnreadPosts 포함 실행
     };
     init();
 
-    const interval = setInterval(autoCheck, 60 * 1000);
+    // 60 * 1000 (60초) → 30 * 60 * 1000 (30분): API 한도 초과 방지
+    const interval = setInterval(autoCheck, 30 * 60 * 1000);
 
-    // 포그라운드 복귀 시 (알림 탭으로 앱 열 때 포함)
+    // 포그라운드 복귀 시: Supabase 동기화만 (API 호출 없음)
     const appStateSub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') syncAndFill();
+      if (state === 'active') syncFromSupabase().then(loadToons);
     });
 
     return () => {

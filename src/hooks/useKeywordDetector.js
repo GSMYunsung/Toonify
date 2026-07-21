@@ -18,7 +18,8 @@ export function extractSeriesName(text) {
 }
 
 export function isCompleteEpisode(text) {
-  return /완결?/.test(text);
+  // /완결?/ 는 "완" 단독 매칭 버그 있음 → 완결 명시적으로만 감지
+  return /완결/.test(text) || /[\[\(「]완[\]\)」]/.test(text);
 }
 
 // OCR 텍스트 전용 — 캡션에는 오탐 위험이 있어 사용하지 않음

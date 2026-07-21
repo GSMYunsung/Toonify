@@ -237,9 +237,12 @@ export async function checkToon(toonInput) {
 
     const isComplete = isCompleteEpisode(analysisText);
 
-    // "완"/"완결"만 있고 숫자가 없을 때 → 마지막화 + 1로 처리
+    // 화수 없이 완결 키워드만 감지된 경우에만 완결 알림 → 별도 플래그로 추적
+    let notifyAsComplete = false;
+
     if (isComplete && ep === null) {
       ep = (toon.lastEpisode || 0) + 1;
+      notifyAsComplete = true; // 화수를 완결 감지로 대체한 경우만 완결 알림
       console.log(`[checkToon] 완결 감지 → 가상 화수: ${ep}`);
     }
 
@@ -248,7 +251,7 @@ export async function checkToon(toonInput) {
     const isNewPost = ep === null && post.id && toon.lastPostId && post.id !== toon.lastPostId;
 
     console.log(
-      `[checkToon] ep=${ep} isComplete=${isComplete} isNewEpisode=${isNewEpisode} isNewPost=${isNewPost}`,
+      `[checkToon] ep=${ep} isComplete=${isComplete} notifyAsComplete=${notifyAsComplete} isNewEpisode=${isNewEpisode} isNewPost=${isNewPost}`,
     );
 
     if (isNewEpisode || isNewPost) {
@@ -266,7 +269,7 @@ export async function checkToon(toonInput) {
         await sendLocalNotification(
           toon.seriesName,
           isNewEpisode ? ep : null,
-          isComplete,
+          notifyAsComplete, // 화수가 있으면 무조건 일반 새 편 알림
         );
       }
       return { found: true, episode: ep, post };

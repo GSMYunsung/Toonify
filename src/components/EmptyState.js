@@ -21,15 +21,15 @@ export default function EmptyState({ onAdd }) {
 
 const styles = (theme) => StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
-  emoji: { fontSize: 52, marginBottom: 20 },
+  emoji: { fontSize: 64, marginBottom: 24 },
   title: { fontSize: 18, fontWeight: '700', color: theme.text, marginBottom: 10 },
   subtitle: {
     fontSize: 14, color: theme.textSub,
-    textAlign: 'center', lineHeight: 22, marginBottom: 32,
+    textAlign: 'center', lineHeight: 22, marginBottom: 36,
   },
   button: {
     backgroundColor: theme.accent,
-    borderRadius: 14, paddingHorizontal: 32, paddingVertical: 14,
+    borderRadius: 16, paddingHorizontal: 32, paddingVertical: 14,
   },
   buttonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

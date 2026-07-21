@@ -87,7 +87,9 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={s.container}>
       <View style={s.header}>
-        <Text style={s.headerTitle}>Toonify</Text>
+        <Text style={s.headerTitle}>
+          <Text style={{ color: theme.accent }}>T</Text>oonify
+        </Text>
         <View style={s.headerActions}>
           <TouchableOpacity style={s.iconButton} onPress={toggleTheme}>
             <Text style={s.iconButtonText}>{isDark ? "☀️" : "🌙"}</Text>
@@ -113,7 +115,10 @@ export default function HomeScreen() {
             <ToonCard toon={item} onUpdate={loadToons} onEdit={setEditingToon} />
           )}
           renderSectionHeader={({ section: { title } }) => (
-            <Text style={s.sectionHeader}>{title}</Text>
+            <View style={s.sectionHeaderRow}>
+              {title === '새 에피소드' && <View style={s.sectionDot} />}
+              <Text style={s.sectionHeader}>{title.toUpperCase()}</Text>
+            </View>
           )}
           refreshControl={
             <RefreshControl
@@ -186,15 +191,25 @@ const styles = (theme) =>
       fontSize: 13,
       paddingVertical: 8,
     },
-    sectionHeader: {
-      fontSize: 12,
-      fontWeight: "600",
-      color: theme.sectionText,
-      letterSpacing: 0.5,
+    sectionHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 7,
       paddingHorizontal: 24,
-      paddingTop: 20,
-      paddingBottom: 8,
-      textTransform: "uppercase",
+      paddingTop: 24,
+      paddingBottom: 10,
+    },
+    sectionDot: {
+      width: 5,
+      height: 5,
+      borderRadius: 2.5,
+      backgroundColor: theme.accent,
+    },
+    sectionHeader: {
+      fontSize: 10,
+      fontWeight: '700',
+      color: theme.sectionText,
+      letterSpacing: 2,
     },
     listContent: { paddingBottom: 24 },
   });

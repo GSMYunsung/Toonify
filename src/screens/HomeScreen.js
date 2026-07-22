@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -7,13 +7,30 @@ import {
   TouchableOpacity,
   RefreshControl,
   AppState,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { getSortedToons, checkAllToons, syncFromSupabase, fillMissingUnreadPosts } from "../services/toon-service";
+import { Feather } from "@expo/vector-icons";
+import {
+  getSortedToons,
+  checkAllToons,
+  syncFromSupabase,
+  fillMissingUnreadPosts,
+} from "../services/toon-service";
 import ToonCard from "../components/ToonCard";
 import AddToonModal from "../components/AddToonModal";
 import EmptyState from "../components/EmptyState";
 import { useTheme } from "../context/ThemeContext";
+import { FONTS } from "../theme";
+
+function relativeTime(ts) {
+  if (!ts) return "동기화 전";
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 10) return "방금 전";
+  if (diff < 60) return diff + "초 전";
+  if (diff < 3600) return Math.floor(diff / 60) + "분 전";
+  return Math.floor(diff / 3600) + "시간 전";
+}
 
 export default function HomeScreen() {
   const { theme, isDark, toggleTheme } = useTheme();
@@ -21,7 +38,19 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingToon, setEditingToon] = useState(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [statusText, setStatusText] = useState("");
+  const [toast, setToast] = useState(null);
+  const toastTO = useRef(null);
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const spinLoop = useRef(null);
+
+  const showToast = useCallback((msg) => {
+    clearTimeout(toastTO.current);
+    setToast(msg);
+    toastTO.current = setTimeout(() => setToast(null), 2200);
+  }, []);
 
   const loadToons = useCallback(async () => {
     const sorted = await getSortedToons();
@@ -37,46 +66,87 @@ export default function HomeScreen() {
   useEffect(() => {
     const init = async () => {
       await loadToons();
-      await syncAndFill(); // 최초 1회만 fillMissingUnreadPosts 포함 실행
+      await syncAndFill();
     };
     init();
 
-    // 60 * 1000 (60초) → 30 * 60 * 1000 (30분): API 한도 초과 방지
-    const interval = setInterval(autoCheck, 30 * 60 * 1000);
-
-    // 포그라운드 복귀 시: Supabase 동기화만 (API 호출 없음)
-    const appStateSub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') syncFromSupabase().then(loadToons);
+    const interval = setInterval(autoCheck, 2 * 60 * 60 * 1000);
+    const appStateSub = AppState.addEventListener("change", (state) => {
+      if (state === "active") syncFromSupabase().then(loadToons);
     });
 
     return () => {
       clearInterval(interval);
       appStateSub.remove();
+      clearTimeout(toastTO.current);
     };
   }, []);
 
+  // Spinner for syncing
+  const isSpinning = isSyncing || refreshing;
+  useEffect(() => {
+    if (isSpinning) {
+      spinLoop.current = Animated.loop(
+        Animated.timing(spinAnim, {
+          toValue: 1,
+          duration: 900,
+          useNativeDriver: true,
+        })
+      );
+      spinLoop.current.start();
+    } else {
+      spinLoop.current?.stop();
+      spinAnim.setValue(0);
+    }
+  }, [isSpinning]);
+
+  const spinRotate = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+
   const autoCheck = async () => {
     try {
+      setIsSyncing(true);
       await checkAllToons(setStatusText);
       await loadToons();
+      setLastSyncedAt(Date.now());
     } catch (e) {
       console.warn("자동 확인 실패:", e.message);
     } finally {
+      setIsSyncing(false);
       setStatusText("");
     }
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await autoCheck();
+    try {
+      setIsSyncing(true);
+      await checkAllToons(setStatusText, { forceAll: true });
+      await loadToons();
+      setLastSyncedAt(Date.now());
+    } catch (e) {
+      console.warn("수동 확인 실패:", e.message);
+    } finally {
+      setIsSyncing(false);
+      setStatusText("");
+    }
     setRefreshing(false);
+    showToast("모든 툰의 새 에피소드를 확인했어요");
   };
+
+  const syncStatusText = isSpinning
+    ? statusText || "동기화 중..."
+    : "마지막 확인: " + relativeTime(lastSyncedAt);
 
   const newToons = toons.filter((t) => t.hasNewEpisode);
   const readToons = toons.filter((t) => !t.hasNewEpisode);
+  const newCount = newToons.length;
 
   const sections = [];
-  if (newToons.length) sections.push({ title: "새 에피소드", data: newToons });
+  if (newToons.length)
+    sections.push({ title: "새 에피소드", data: newToons, count: newCount });
   if (readToons.length)
     sections.push({
       title: newToons.length ? "읽은 툰" : "구독 중",
@@ -87,25 +157,45 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={s.container}>
+      {/* ── Header ── */}
       <View style={s.header}>
-        <Text style={s.headerTitle}>
-          <Text style={{ color: theme.accent }}>T</Text>oonify
-        </Text>
+        <View>
+          <View style={s.titleRow}>
+            <Text style={s.title}>Toonify</Text>
+            {newCount > 0 && (
+              <View style={s.countBadge}>
+                <Text style={s.countBadgeText}>{newCount}</Text>
+              </View>
+            )}
+          </View>
+          <View style={s.syncRow}>
+            {isSpinning && (
+              <Animated.View style={{ transform: [{ rotate: spinRotate }] }}>
+                <Feather name="rotate-cw" size={10} color={theme.muted} />
+              </Animated.View>
+            )}
+            <Text style={s.syncText}>{syncStatusText}</Text>
+          </View>
+        </View>
+
         <View style={s.headerActions}>
-          <TouchableOpacity style={s.iconButton} onPress={toggleTheme}>
-            <Text style={s.iconButtonText}>{isDark ? "☀️" : "🌙"}</Text>
+          <TouchableOpacity style={s.iconBtn} onPress={toggleTheme}>
+            <Feather
+              name={isDark ? "sun" : "moon"}
+              size={17}
+              color={theme.text}
+            />
           </TouchableOpacity>
           <TouchableOpacity
-            style={s.addButton}
+            style={s.addBtn}
             onPress={() => setModalVisible(true)}
           >
-            <Text style={s.addButtonText}>+</Text>
+            <Feather name="plus" size={20} color={theme.ctaText} />
           </TouchableOpacity>
         </View>
       </View>
 
-      {statusText ? <Text style={s.statusText}>{statusText}</Text> : null}
-
+      {/* ── List / Empty ── */}
       {toons.length === 0 ? (
         <EmptyState onAdd={() => setModalVisible(true)} />
       ) : (
@@ -113,12 +203,16 @@ export default function HomeScreen() {
           sections={sections}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <ToonCard toon={item} onUpdate={loadToons} onEdit={setEditingToon} />
+            <ToonCard toon={item} onUpdate={loadToons} onEdit={setEditingToon} onMessage={showToast} />
           )}
-          renderSectionHeader={({ section: { title } }) => (
-            <View style={s.sectionHeaderRow}>
-              {title === '새 에피소드' && <View style={s.sectionDot} />}
-              <Text style={s.sectionHeader}>{title.toUpperCase()}</Text>
+          renderSectionHeader={({ section: { title, count } }) => (
+            <View style={s.sectionHeader}>
+              <Text style={s.sectionTitle}>{title}</Text>
+              {count != null && (
+                <View style={s.sectionBadge}>
+                  <Text style={s.sectionBadgeText}>{count}</Text>
+                </View>
+              )}
             </View>
           )}
           refreshControl={
@@ -126,6 +220,7 @@ export default function HomeScreen() {
               refreshing={refreshing}
               onRefresh={onRefresh}
               tintColor={theme.accent}
+              colors={[theme.accent]}
             />
           }
           contentContainerStyle={s.listContent}
@@ -133,16 +228,31 @@ export default function HomeScreen() {
         />
       )}
 
+      {/* ── Toast ── */}
+      {toast ? (
+        <View style={s.toast} pointerEvents="none">
+          <Text style={s.toastText}>{toast}</Text>
+        </View>
+      ) : null}
+
+      {/* ── Modals ── */}
       <AddToonModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
-        onAdded={loadToons}
+        onAdded={() => {
+          loadToons();
+          showToast("새로운 툰을 추가했어요");
+        }}
+        onUpdate={loadToons}
       />
       <AddToonModal
         visible={editingToon !== null}
         editToon={editingToon}
         onClose={() => setEditingToon(null)}
-        onAdded={loadToons}
+        onAdded={() => {
+          loadToons();
+          showToast("수정 내용을 저장했어요");
+        }}
       />
     </SafeAreaView>
   );
@@ -151,66 +261,107 @@ export default function HomeScreen() {
 const styles = (theme) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.bg },
+
+    // Header
     header: {
       flexDirection: "row",
       justifyContent: "space-between",
-      alignItems: "center",
-      paddingHorizontal: 24,
-      paddingVertical: 16,
-      backgroundColor: theme.header,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.border,
+      alignItems: "flex-start",
+      paddingHorizontal: 22,
+      paddingTop: 14,
+      paddingBottom: 12,
     },
-    headerTitle: { fontSize: 22, fontWeight: "700", color: theme.text },
-    headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
-    iconButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: theme.card,
+    titleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+    title: {
+      fontFamily: FONTS.heading,
+      fontSize: 26,
+      color: theme.text,
+      lineHeight: 30,
+    },
+    countBadge: {
+      minWidth: 20,
+      height: 20,
+      paddingHorizontal: 6,
+      borderRadius: 999,
+      backgroundColor: theme.ctaBg,
       justifyContent: "center",
       alignItems: "center",
     },
-    iconButtonText: { fontSize: 16 },
-    addButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: theme.accent,
+    countBadgeText: {
+      color: theme.ctaText,
+      fontSize: 11,
+      fontWeight: "700",
+    },
+    syncRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 5 },
+    syncText: { fontSize: 11.5, color: theme.muted },
+
+    headerActions: { flexDirection: "row", gap: 8, alignItems: "center" },
+    iconBtn: {
+      width: 38,
+      height: 38,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: theme.divider,
+      backgroundColor: theme.surface,
       justifyContent: "center",
       alignItems: "center",
     },
-    addButtonText: {
-      color: "#fff",
-      fontSize: 22,
-      fontWeight: "300",
-      marginTop: -1,
+    addBtn: {
+      width: 38,
+      height: 38,
+      borderRadius: 999,
+      backgroundColor: theme.ctaBg,
+      justifyContent: "center",
+      alignItems: "center",
     },
-    statusText: {
-      textAlign: "center",
-      color: theme.accent,
-      fontSize: 13,
-      paddingVertical: 8,
-    },
-    sectionHeaderRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 7,
-      paddingHorizontal: 24,
-      paddingTop: 24,
+
+    // Section headers
+    sectionHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingHorizontal: 20,
+      paddingTop: 22,
       paddingBottom: 10,
     },
-    sectionDot: {
-      width: 5,
-      height: 5,
-      borderRadius: 2.5,
+    sectionTitle: {
+      fontFamily: FONTS.heading,
+      fontSize: 17,
+      color: theme.text,
+    },
+    sectionBadge: {
+      minWidth: 22,
+      height: 22,
+      paddingHorizontal: 7,
+      borderRadius: 999,
       backgroundColor: theme.accent,
+      justifyContent: "center",
+      alignItems: "center",
     },
-    sectionHeader: {
-      fontSize: 10,
-      fontWeight: '700',
-      color: theme.sectionText,
-      letterSpacing: 2,
+    sectionBadgeText: {
+      color: theme.accentText,
+      fontSize: 11.5,
+      fontWeight: "700",
     },
-    listContent: { paddingBottom: 24 },
+
+    listContent: { paddingBottom: 32 },
+
+    // Toast
+    toast: {
+      position: "absolute",
+      left: 20,
+      right: 20,
+      bottom: 30,
+      backgroundColor: theme.text,
+      paddingVertical: 12,
+      paddingHorizontal: 18,
+      borderRadius: 999,
+      alignItems: "center",
+      shadowColor: theme.shadowColor,
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.22,
+      shadowRadius: 12,
+      elevation: 8,
+    },
+    toastText: { color: theme.bg, fontSize: 13, fontWeight: "500" },
   });

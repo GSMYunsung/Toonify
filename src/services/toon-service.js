@@ -52,6 +52,7 @@ export async function addToon(data) {
     ...data,
     readEpisode: data.lastEpisode || 0,
     hasNewEpisode: false,
+    episodeHistory: data.episodeHistory || [],
     lastThumbnailUrl: null,
     lastPostId: null,
     addedAt: new Date().toISOString(),
@@ -123,6 +124,23 @@ export async function markAsRead(id) {
   }
 }
 
+function buildEpisodeHistory(toon, allPosts) {
+  const existing = {};
+  for (const h of (toon.episodeHistory || [])) {
+    existing[h.episode] = h;
+  }
+  const allWords = toon.seriesName.split(/\s+/).filter((w) => w.length >= 2);
+  for (const post of allPosts) {
+    const cap = post.caption || '';
+    if (!allWords.some((w) => cap.includes(w))) continue;
+    const ep = extractEpisodeNumber(cap);
+    if (ep !== null && !existing[ep]) {
+      existing[ep] = { episode: ep, url: post.url };
+    }
+  }
+  return Object.values(existing).sort((a, b) => a.episode - b.episode);
+}
+
 function buildUnreadPosts(toon, allPosts) {
   const readEp = toon.readEpisode || 0;
   const allWords = toon.seriesName.split(/\s+/).filter((w) => w.length >= 2);
@@ -151,6 +169,13 @@ export async function advanceEpisode(id, episode, remainingPosts) {
   t.unreadPosts = remainingPosts;
   t.hasNewEpisode = remainingPosts.length > 0;
   t.updatedAt = new Date().toISOString();
+
+  // 유예됐던 완결 알림 — 마지막 화수를 읽는 순간 완결 알림 전송
+  if (t.pendingComplete && remainingPosts.length === 0) {
+    t.pendingComplete = false;
+    sendLocalNotification(t.seriesName, episode, true);
+  }
+
   await save(toons);
 
   supabase.from('toons').update({
@@ -183,33 +208,62 @@ export async function getSortedToons() {
   });
 }
 
-export async function checkToon(toonInput) {
+export async function checkToon(toonInput, ocrLimitRef = null) {
   // 항상 최신 저장 데이터로 비교 (stale props 방지)
   const stored = await getToons();
   const toon = stored.find((t) => t.id === toonInput.id) ?? toonInput;
 
-  const allPosts = await fetchLatestPosts(toon.username);
-  const posts = [...allPosts]
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, 3);
+  // OCR 래퍼: null 반환(한도 초과) 시 카운터 증가, 2회 이상이면 전체 플로우 중단
+  const ocr = async (imageUrl) => {
+    const result = await extractTextFromImage(imageUrl);
+    if (result === null) {
+      if (ocrLimitRef) {
+        ocrLimitRef.count++;
+        if (ocrLimitRef.count >= 2) {
+          const err = new Error('OCR 한도 초과로 새로고침 중단');
+          err.code = 'OCR_LIMIT';
+          throw err;
+        }
+      }
+      return ""; // 단건 수동 체크는 그냥 빈 문자열로 처리
+    }
+    return result;
+  };
 
-  console.log(
-    `[checkToon] @${toon.username} — 포스트 ${allPosts.length}개 중 최신 ${posts.length}개 확인`,
-  );
+  const allPosts = await fetchLatestPosts(toon.username);
+  const allPostsOldestFirst = [...allPosts].sort((a, b) => a.timestamp - b.timestamp);
+
+  // 12개 전체를 오래된 순으로 검사 — ep > lastEpisode 비교가 필터 역할
+  const posts = allPostsOldestFirst;
+
+  console.log(`[checkToon] @${toon.username} — 검사대상 ${posts.length}개 (오래된 순)`);
+
+  // 이번 체크에서 발견한 새 에피소드 목록 { ep, url, post, isComplete }
+  const collected = [];
+  // 루프 내에서 누적 최고 화수 추적 (synthetic ep 계산에 사용)
+  let runningMaxEp = toon.lastEpisode || 0;
 
   for (const post of posts) {
     const caption = post.caption || "";
     const allWords = toon.seriesName.split(/\s+/).filter((w) => w.length >= 2);
-    // 캡션 매칭엔 가장 긴 단어 최대 2개만 사용 (변별력 강화, 흔한 짧은 단어 오탐 방지)
-    const keyWords = [...allWords].sort((a, b) => b.length - a.length).slice(0, 2);
-    const captionMatched = keyWords.some((w) => caption.includes(w));
+    const words3up = allWords.filter((w) => w.length >= 3);
+    const keyWords = words3up.length >= 1
+      ? words3up
+      : [...allWords].sort((a, b) => b.length - a.length).slice(0, 2);
+    const captionTokens = new Set(
+      caption.split(/\s+/).map((t) => t.replace(/^[^가-힣a-zA-Z0-9]+|[^가-힣a-zA-Z0-9]+$/g, ""))
+    );
+    const minMatch = Math.min(2, keyWords.length);
+    const matchThreshold = Math.min(3, keyWords.length);
+    const matchCount = keyWords.filter((w) => captionTokens.has(w)).length;
+    const captionMatched = matchCount >= minMatch;
+    const strongMatch = matchCount >= matchThreshold;
 
     let analysisText = caption;
 
-    if (!captionMatched) {
-      console.log(`[checkToon] 캡션에 키워드 없음 → OCR 시도`);
-      const ocrText = await extractTextFromImage(post.thumbnailUrl);
-      // OCR은 노이즈가 많으므로 모든 단어로 관대하게 매칭
+    if (!captionMatched && !toon.isComplete) {
+      console.log(`[checkToon] 캡션에 키워드 부족(${matchCount}/${minMatch}) → OCR 시도`);
+      const ocrText = await ocr(post.thumbnailUrl);
       const ocrMatched = allWords.some((w) => ocrText.includes(w));
       if (!ocrMatched) {
         console.log(`[checkToon] OCR에도 키워드 없음 → 건너뜀`);
@@ -217,6 +271,8 @@ export async function checkToon(toonInput) {
       }
       analysisText = ocrText;
       console.log(`[checkToon] OCR에서 키워드 확인됨`);
+    } else if (!captionMatched) {
+      continue;
     }
 
     const isOCR = analysisText !== caption;
@@ -224,10 +280,9 @@ export async function checkToon(toonInput) {
       ? extractEpisodeNumberFromOCR(analysisText)
       : extractEpisodeNumber(analysisText);
 
-    // 캡션에 키워드는 있지만 화수가 없을 때 → OCR로 재시도
-    if (captionMatched && ep === null) {
+    if (captionMatched && ep === null && !toon.isComplete) {
       console.log(`[checkToon] 캡션에 화수 없음 → OCR 폴백 시도`);
-      const ocrText = await extractTextFromImage(post.thumbnailUrl);
+      const ocrText = await ocr(post.thumbnailUrl);
       const ocrEp = extractEpisodeNumberFromOCR(ocrText);
       if (ocrEp !== null) {
         ep = ocrEp;
@@ -237,50 +292,96 @@ export async function checkToon(toonInput) {
 
     const isComplete = isCompleteEpisode(analysisText);
 
-    // 화수 없이 완결 키워드만 감지된 경우에만 완결 알림 → 별도 플래그로 추적
-    let notifyAsComplete = false;
-
     if (isComplete && ep === null) {
-      ep = (toon.lastEpisode || 0) + 1;
-      notifyAsComplete = true; // 화수를 완결 감지로 대체한 경우만 완결 알림
+      ep = runningMaxEp + 1;
       console.log(`[checkToon] 완결 감지 → 가상 화수: ${ep}`);
     }
 
-    const isNewEpisode = ep !== null && ep > (toon.lastEpisode || 0);
-    // lastPostId가 없으면(첫 체크) ID 비교 건너뜀 — 화수 없는 포스트 오탐 방지
-    const isNewPost = ep === null && post.id && toon.lastPostId && post.id !== toon.lastPostId;
+    if (ep === null && strongMatch && !isComplete) {
+      ep = runningMaxEp + 1;
+      console.log(`[checkToon] 강한 키워드 매칭(${matchCount}/${keyWords.length}) → 가상 화수: ${ep}`);
+    }
 
-    console.log(
-      `[checkToon] ep=${ep} isComplete=${isComplete} notifyAsComplete=${notifyAsComplete} isNewEpisode=${isNewEpisode} isNewPost=${isNewPost}`,
-    );
+    const isNewEpisode = ep !== null && ep > runningMaxEp;
 
-    if (isNewEpisode || isNewPost) {
-      const unreadPosts = buildUnreadPosts(toon, allPosts);
-      await updateToon(toon.id, {
-        hasNewEpisode: true,
-        ...(isNewEpisode ? { lastEpisode: ep } : {}),
-        lastPostId: post.id,
-        lastEpisodeTitle: caption.slice(0, 80),
-        lastThumbnailUrl: post.thumbnailUrl,
-        lastPostUrl: post.url,
-        unreadPosts,
-      });
-      if (!toon.hasNewEpisode) {
-        await sendLocalNotification(
-          toon.seriesName,
-          isNewEpisode ? ep : null,
-          notifyAsComplete, // 화수가 있으면 무조건 일반 새 편 알림
-        );
-      }
-      return { found: true, episode: ep, post };
+    console.log(`[checkToon] ep=${ep} isComplete=${isComplete} isNewEpisode=${isNewEpisode}`);
+
+    if (isNewEpisode) {
+      collected.push({ ep, url: post.url, post, isComplete });
+      runningMaxEp = ep;
+      // 루프 계속 — 다음 화도 찾기
     }
   }
 
-  // 새 화수 없음 — lastPostId 기준점 저장 (첫 체크 포함)
-  if (posts.length > 0 && !toon.lastPostId) {
-    await updateToon(toon.id, { lastPostId: posts[0].id });
+  // ── 새 화수가 하나라도 발견된 경우 ──
+  if (collected.length > 0) {
+    const maxEp = runningMaxEp;
+    const lastEntry = collected[collected.length - 1];
+    const anyComplete = collected.some((e) => e.isComplete);
+
+    // episodeHistory: 기존 + 이번에 발견한 모든 화수 병합
+    let episodeHistory = buildEpisodeHistory(toon, allPosts);
+    for (const { ep, url } of collected) {
+      if (!episodeHistory.find((h) => h.episode === ep)) {
+        episodeHistory.push({ episode: ep, url });
+      }
+    }
+    episodeHistory.sort((a, b) => a.episode - b.episode);
+
+    // unreadPosts: 캡션 기반 + OCR 감지분 병합
+    const unreadPosts = buildUnreadPosts(toon, allPosts);
+    for (const { ep, url } of collected) {
+      if (!unreadPosts.find((p) => p.episode === ep)) {
+        unreadPosts.push({ episode: ep, url });
+      }
+    }
+    unreadPosts.sort((a, b) => a.episode - b.episode);
+
+    const deferComplete = anyComplete && unreadPosts.length > 0;
+
+    await updateToon(toon.id, {
+      hasNewEpisode: true,
+      lastEpisode: maxEp,
+      ...(anyComplete ? { isComplete: true } : {}),
+      pendingComplete: deferComplete,
+      lastPostId: lastEntry.post.id,
+      lastEpisodeTitle: (lastEntry.post.caption || "").slice(0, 80),
+      lastThumbnailUrl: lastEntry.post.thumbnailUrl,
+      lastPostUrl: lastEntry.post.url,
+      unreadPosts,
+      episodeHistory,
+    });
+
+    if (!toon.hasNewEpisode) {
+      await sendLocalNotification(
+        toon.seriesName,
+        collected.map((e) => e.ep),
+        anyComplete && !deferComplete,
+      );
+    }
+
+    return { found: true, episodes: collected.map((e) => e.ep) };
   }
-  return { found: false };
+
+  // ── 새 화수 없음 ──
+  const historyUpdates = buildEpisodeHistory(toon, allPosts);
+  const historyGrew = historyUpdates.length > (toon.episodeHistory || []).length;
+  const newestPost = allPostsOldestFirst[allPostsOldestFirst.length - 1];
+
+  const allSeriesWords = toon.seriesName.split(/\s+/).filter((w) => w.length >= 2);
+  const anySeriesPost = allPosts.some((p) =>
+    allSeriesWords.some((w) => (p.caption || '').includes(w))
+  );
+  const shouldBeUndetectable = !anySeriesPost && allPosts.length > 0;
+  if (shouldBeUndetectable !== !!toon.undetectable) {
+    await updateToon(toon.id, { undetectable: shouldBeUndetectable });
+  }
+
+  await updateToon(toon.id, {
+    ...(newestPost && !toon.lastPostId ? { lastPostId: newestPost.id } : {}),
+    ...(historyGrew ? { episodeHistory: historyUpdates } : {}),
+  });
+  return { found: false, undetectable: shouldBeUndetectable };
 }
 
 // 배치가 Supabase를 업데이트했지만 로컬에 반영 안 된 경우 동기화
@@ -335,17 +436,25 @@ export async function fillMissingUnreadPosts() {
   }
 }
 
-export async function checkAllToons(onProgress) {
+export async function checkAllToons(onProgress, { forceAll = false } = {}) {
   const toons = await getToons();
   let updated = false;
+  const ocrLimitRef = { count: 0 };
 
   for (const toon of toons) {
+    // 완결 툰은 항상 제외. undetectable은 자동확인 시만 제외(수동 새로고침이면 재시도)
+    if (toon.isComplete) continue;
+    if (toon.undetectable && !forceAll) continue;
     try {
       onProgress?.(`@${toon.username} 확인 중...`);
-      const result = await checkToon(toon);
+      const result = await checkToon(toon, ocrLimitRef);
       if (result.found) updated = true;
       await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1000));
     } catch (err) {
+      if (err.code === 'OCR_LIMIT') {
+        console.warn('[checkAllToons] OCR 한도 초과 2회 → 새로고침 중단');
+        break;
+      }
       console.warn(`@${toon.username} 확인 실패:`, err.message);
     }
   }
@@ -353,18 +462,23 @@ export async function checkAllToons(onProgress) {
   return updated;
 }
 
-async function sendLocalNotification(seriesName, episode, isComplete = false) {
+async function sendLocalNotification(seriesName, episodes, isComplete = false) {
+  const epList = Array.isArray(episodes)
+    ? episodes
+    : episodes != null ? [episodes] : [];
+
   const title = isComplete
     ? `📚 ${seriesName} 완결!`
     : `📚 ${seriesName} 새 편!`;
   let body;
   if (isComplete) {
-    body =
-      episode != null
-        ? `${episode}화로 완결됐어요. 지금 확인해보세요!`
-        : `완결됐어요. 지금 확인해보세요!`;
-  } else if (episode != null) {
-    body = `${episode}화가 올라왔어요. 지금 확인해보세요!`;
+    body = epList.length > 0
+      ? `${epList.join('화, ')}화로 완결됐어요. 지금 확인해보세요!`
+      : `완결됐어요. 지금 확인해보세요!`;
+  } else if (epList.length > 1) {
+    body = `${epList.join('화, ')}화가 추가되었어요. 지금 확인해보세요!`;
+  } else if (epList.length === 1) {
+    body = `${epList[0]}화가 올라왔어요. 지금 확인해보세요!`;
   } else {
     body = `새 게시물이 올라왔어요. 지금 확인해보세요!`;
   }

@@ -1,9 +1,12 @@
 export function extractEpisodeNumber(text) {
   const patterns = [
     /(\d+)\s*화/,
+    /(\d+)\s*완/,   // "10완", "10완결"
     /(\d+)\s*편/,
     /ep\.?\s*(\d+)/i,
+    /(?:^|\n)(\d{1,3})\s*(?:\n|$)/,  // 줄 단독 숫자 ("남미새\n3\n" 형태)
     /#(\d+)/,
+    /[(\（](\d+)[)\）]/,  // "(3)", "（3）" 괄호 안 숫자
     /(\d+)$/,
   ];
   for (const pattern of patterns) {

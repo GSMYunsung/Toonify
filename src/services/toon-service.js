@@ -124,7 +124,7 @@ export async function markAsRead(id) {
   }
 }
 
-function buildEpisodeHistory(toon, allPosts) {
+export function buildEpisodeHistory(toon, allPosts) {
   const existing = {};
   for (const h of (toon.episodeHistory || [])) {
     existing[h.episode] = h;
@@ -141,7 +141,7 @@ function buildEpisodeHistory(toon, allPosts) {
   return Object.values(existing).sort((a, b) => a.episode - b.episode);
 }
 
-function buildUnreadPosts(toon, allPosts) {
+export function buildUnreadPosts(toon, allPosts) {
   const readEp = toon.readEpisode || 0;
   const allWords = toon.seriesName.split(/\s+/).filter((w) => w.length >= 2);
   const seen = new Set();
@@ -295,11 +295,6 @@ export async function checkToon(toonInput, ocrLimitRef = null) {
     if (isComplete && ep === null) {
       ep = runningMaxEp + 1;
       console.log(`[checkToon] 완결 감지 → 가상 화수: ${ep}`);
-    }
-
-    if (ep === null && strongMatch && !isComplete) {
-      ep = runningMaxEp + 1;
-      console.log(`[checkToon] 강한 키워드 매칭(${matchCount}/${keyWords.length}) → 가상 화수: ${ep}`);
     }
 
     const isNewEpisode = ep !== null && ep > runningMaxEp;

@@ -72,7 +72,7 @@ export default function HomeScreen() {
 
     const interval = setInterval(autoCheck, 2 * 60 * 60 * 1000);
     const appStateSub = AppState.addEventListener("change", (state) => {
-      if (state === "active") syncFromSupabase().then(loadToons);
+      if (state === "active") syncAndFill();
     });
 
     return () => {

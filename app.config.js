@@ -10,6 +10,8 @@ module.exports = {
     },
     updates: {
       url: "https://u.expo.dev/e5379365-91ef-438c-b10c-5b3ee7bf7007",
+      enabled: true,
+      checkAutomatically: "ON_ERROR_RECOVERY",
     },
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
@@ -21,6 +23,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.choeyunseong.toonify",
+      appleTeamId: "K7MR8BV2Q4",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },

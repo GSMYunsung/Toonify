@@ -247,7 +247,7 @@ export default function ToonCard({ toon, onUpdate, onEdit, onMessage }) {
 
               {/* 버튼 행 */}
               <View style={st.btnRow}>
-                <TouchableOpacity onPress={handleCheck} style={st.iconBtn}>
+                <TouchableOpacity onPress={handleCheck} style={st.iconBtn} testID="refresh-btn">
                   <Animated.View style={{ transform: [{ rotate: spinRotate }] }}>
                     <Feather name="rotate-cw" size={15} color={theme.muted} />
                   </Animated.View>

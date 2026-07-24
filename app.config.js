@@ -5,6 +5,12 @@ module.exports = {
     slug: "toon-notifier-app",
     version: "1.0.0",
     orientation: "portrait",
+    runtimeVersion: {
+      policy: "appVersion",
+    },
+    updates: {
+      url: "https://u.expo.dev/e5379365-91ef-438c-b10c-5b3ee7bf7007",
+    },
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
     splash: {

@@ -83,13 +83,17 @@ async function extractTextFromImage(imageUrl) {
 }
 
 // ─── Expo Push 알림 전송 ──────────────────────────────────────────
-async function sendPushNotification(tokens, seriesName, episode, isComplete) {
+async function sendPushNotification(tokens, seriesName, episodes, isComplete) {
+  const episode = Array.isArray(episodes) ? Math.max(...episodes) : episodes;
   const title = isComplete
     ? `📚 ${seriesName} 완결!`
     : `📚 ${seriesName} 새 편!`;
   let body;
   if (isComplete) {
     body = episode != null ? `${episode}화로 완결됐어요!` : "완결됐어요!";
+  } else if (Array.isArray(episodes) && episodes.length > 1) {
+    const sorted = [...episodes].sort((a, b) => a - b);
+    body = `${sorted[0]}화~${sorted[sorted.length - 1]}화가 올라왔어요!`;
   } else if (episode != null) {
     body = `${episode}화가 올라왔어요!`;
   } else {
@@ -130,6 +134,12 @@ async function checkToon(toon) {
 
   console.log(`[${toon.username}] 게시물 ${posts.length}개 확인`);
 
+  const collected = [];
+  const seenEps = new Set();
+  let maxEp = toon.last_episode || 0;
+  let lastPost = null;
+  let anyComplete = false;
+
   for (const post of posts) {
     const caption = post.caption || "";
     const allWords = toon.series_name.split(/\s+/).filter((w) => w.length >= 2);
@@ -162,33 +172,48 @@ async function checkToon(toon) {
     }
 
     const isComplete = isCompleteEpisode(analysisText);
-    if (isComplete && ep === null) ep = (toon.last_episode || 0) + 1;
+    if (isComplete && ep === null) ep = maxEp + 1;
+    if (ep !== null && ep > maxEp) maxEp = ep;
 
-    const isNewEpisode = ep !== null && ep > (toon.last_episode || 0);
+    // read_episode 기준 — 3화 먼저 감지돼도 2화가 unread면 수집
+    const isNewEpisode = ep !== null && ep > (toon.read_episode || 0) && !seenEps.has(ep);
     const isNewPost = ep === null && post.id && post.id !== toon.last_post_id;
 
     console.log(
       `[${toon.username}] ep=${ep} isComplete=${isComplete} isNewEpisode=${isNewEpisode} isNewPost=${isNewPost}`,
     );
 
-    if (isNewEpisode || isNewPost) {
-      await supabase
-        .from("toons")
-        .update({
-          has_new_episode: true,
-          ...(isNewEpisode ? { last_episode: ep } : {}),
-          last_post_id: post.id,
-          last_episode_title: caption.slice(0, 80),
-          last_thumbnail_url: post.thumbnailUrl,
-          last_post_url: post.url,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", toon.id);
-      return { found: true, episode: ep, isComplete };
+    if (isNewEpisode) {
+      seenEps.add(ep);
+      collected.push({ ep, post, isComplete });
+      if (isComplete) anyComplete = true;
+      lastPost = post;
+    } else if (isNewPost && collected.length === 0) {
+      lastPost = post;
+      collected.push({ ep: null, post, isComplete: false });
     }
   }
 
-  return { found: false };
+  if (collected.length === 0) return { found: false };
+
+  const highestEp = collected.reduce((max, c) => c.ep !== null && c.ep > max ? c.ep : max, toon.last_episode || 0);
+  const representativePost = lastPost || collected[0].post;
+
+  await supabase
+    .from("toons")
+    .update({
+      has_new_episode: true,
+      last_episode: highestEp > (toon.last_episode || 0) ? highestEp : toon.last_episode,
+      last_post_id: representativePost.id,
+      last_episode_title: representativePost.caption?.slice(0, 80) ?? "",
+      last_thumbnail_url: representativePost.thumbnailUrl,
+      last_post_url: representativePost.url,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", toon.id);
+
+  const episodes = collected.map((c) => c.ep).filter((e) => e !== null);
+  return { found: true, episode: highestEp || null, episodes, isComplete: anyComplete };
 }
 
 // ─── 메인 ────────────────────────────────────────────────────────
@@ -232,7 +257,7 @@ async function main() {
           await sendPushNotification(
             [token],
             toon.series_name,
-            result.episode,
+            result.episodes?.length > 0 ? result.episodes : result.episode,
             result.isComplete,
           );
         } else {

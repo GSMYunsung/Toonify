@@ -297,14 +297,18 @@ export async function checkToon(toonInput, ocrLimitRef = null) {
       console.log(`[checkToon] 완결 감지 → 가상 화수: ${ep}`);
     }
 
-    const isNewEpisode = ep !== null && ep > runningMaxEp;
+    // runningMaxEp는 완결 synthetic ep 계산용으로만 사용 (lastEpisode 포함 최댓값 추적)
+    if (ep !== null && ep > runningMaxEp) runningMaxEp = ep;
+
+    const alreadyCollected = collected.some((c) => c.ep === ep);
+    const alreadyInUnread = (toon.unreadPosts || []).some((p) => p.episode === ep);
+    // readEpisode 기준 비교 — 3화 먼저 감지 후 2화도 unread면 true
+    const isNewEpisode = ep !== null && ep > (toon.readEpisode || 0) && !alreadyCollected && !alreadyInUnread;
 
     console.log(`[checkToon] ep=${ep} isComplete=${isComplete} isNewEpisode=${isNewEpisode}`);
 
     if (isNewEpisode) {
       collected.push({ ep, url: post.url, post, isComplete });
-      runningMaxEp = ep;
-      // 루프 계속 — 다음 화도 찾기
     }
   }
 
@@ -414,9 +418,8 @@ export async function syncFromSupabase() {
 // hasNewEpisode는 있는데 unreadPosts가 없는 툰의 링크 목록 채우기
 export async function fillMissingUnreadPosts() {
   const toons = await getToons();
-  const needsFill = toons.filter(
-    (t) => t.hasNewEpisode && (!t.unreadPosts || t.unreadPosts.length === 0)
-  );
+  // hasNewEpisode인 툰은 항상 재검사 — lastEpisode와 readEpisode 사이 누락 화수 포함
+  const needsFill = toons.filter((t) => t.hasNewEpisode);
 
   for (const toon of needsFill) {
     try {

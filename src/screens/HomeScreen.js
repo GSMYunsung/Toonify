@@ -51,8 +51,6 @@ export default function HomeScreen() {
   const spinLoop = useRef(null);
   const syncingRef = useRef(false);
   const lastProcessedNotifId = useRef(null);
-  const initDoneRef = useRef(false);
-  const notifHandledRef = useRef(false); // 알림 처리 직후 autoCheck 스킵용
 
   const showToast = useCallback((msg) => {
     clearTimeout(toastTO.current);
@@ -89,7 +87,6 @@ export default function HomeScreen() {
       if (updates) {
         await applyNotificationUpdates(updates);
         await loadToons();
-        notifHandledRef.current = true; // 다음 autoCheck 스킵
       }
     };
 
@@ -104,7 +101,6 @@ export default function HomeScreen() {
           // 처리한 알림 ID 기록 → notifResponse 리스너 중복 방지
           lastProcessedNotifId.current = lastResponse.notification?.request?.identifier;
           await applyNotificationUpdates(updates);
-          notifHandledRef.current = true; // 다음 autoCheck 스킵
         }
       }
 
@@ -113,11 +109,9 @@ export default function HomeScreen() {
       // Supabase 동기화 완료 후 스피너 해제
       await syncAndFill();
       setInitialLoading(false);
-      initDoneRef.current = true;  // autoCheck가 이제부터 실행 가능
     };
     init();
 
-    const interval = setInterval(autoCheck, 2 * 60 * 60 * 1000);
     const appStateSub = AppState.addEventListener("change", (state) => {
       if (state === "active") syncAndFill();
     });
@@ -130,7 +124,6 @@ export default function HomeScreen() {
     );
 
     return () => {
-      clearInterval(interval);
       appStateSub.remove();
       notifReceived.remove();
       notifResponse.remove();
@@ -160,28 +153,6 @@ export default function HomeScreen() {
     inputRange: [0, 1],
     outputRange: ["0deg", "360deg"],
   });
-
-  const autoCheck = async () => {
-    // init() 완료 전이거나 syncAndFill 진행 중이면 스킵
-    if (!initDoneRef.current || syncingRef.current) return;
-    // 알림으로 진입한 직후엔 서버가 이미 감지·업데이트 완료 — 인스타 재확인 불필요
-    if (notifHandledRef.current) {
-      notifHandledRef.current = false;
-      return;
-    }
-    try {
-      setIsSyncing(true);
-      await syncFromSupabase();  // 최신 has_new_episode 반영 후 체크
-      await checkAllToons(setStatusText);
-      await loadToons();
-      setLastSyncedAt(Date.now());
-    } catch (e) {
-      console.warn("자동 확인 실패:", e.message);
-    } finally {
-      setIsSyncing(false);
-      setStatusText("");
-    }
-  };
 
   const onRefresh = async () => {
     setRefreshing(true);

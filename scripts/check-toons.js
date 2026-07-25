@@ -4,11 +4,10 @@
 const { createClient } = require("@supabase/supabase-js");
 if (!globalThis.WebSocket) globalThis.WebSocket = require("ws");
 
-const { createWorker } = require("tesseract.js");
-
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const HASDATA_KEY = process.env.HASDATA_KEY;
+const OCR_SPACE_KEY = process.env.OCR_SPACE_KEY;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
@@ -72,11 +71,20 @@ async function fetchLatestPosts(username) {
   }));
 }
 
-// ─── OCR (Tesseract.js, 토큰 불필요) ─────────────────────────────
-async function extractTextFromImage(imageUrl, worker) {
+// ─── OCR (OCR.space API) ──────────────────────────────────────────
+async function extractTextFromImage(imageUrl) {
   try {
-    const { data: { text } } = await worker.recognize(imageUrl);
-    return text || "";
+    const params = new URLSearchParams({
+      url: imageUrl,
+      language: "kor",
+      apikey: OCR_SPACE_KEY,
+      OCREngine: "2",
+      isTable: "false",
+    });
+    const res = await fetch(`https://api.ocr.space/parse/imageurl?${params}`);
+    if (!res.ok) return "";
+    const data = await res.json();
+    return data?.ParsedResults?.[0]?.ParsedText || "";
   } catch {
     return "";
   }
@@ -134,7 +142,7 @@ async function sendPushNotification(token, results) {
 }
 
 // ─── 툰 하나 확인 ────────────────────────────────────────────────
-async function checkToon(toon, worker) {
+async function checkToon(toon) {
   const allPosts = await fetchLatestPosts(toon.username);
   const posts = [...allPosts]
     .sort((a, b) => b.timestamp - a.timestamp)
@@ -168,7 +176,7 @@ async function checkToon(toon, worker) {
     let analysisText = caption;
 
     if (!captionMatched) {
-      const ocrText = await extractTextFromImage(post.thumbnailUrl, worker);
+      const ocrText = await extractTextFromImage(post.thumbnailUrl);
       const ocrMatched = allWords.some((w) => ocrText.includes(w));
       if (!ocrMatched) {
         console.log(`[${toon.username}] 스킵 — 캡션/OCR 키워드 없음 | caption: "${(post.caption || "").slice(0, 40)}" | ocr: "${ocrText.slice(0, 40)}"`);
@@ -183,7 +191,7 @@ async function checkToon(toon, worker) {
       : extractEpisodeNumber(analysisText);
 
     if (captionMatched && ep === null) {
-      const ocrText = await extractTextFromImage(post.thumbnailUrl, worker);
+      const ocrText = await extractTextFromImage(post.thumbnailUrl);
       const ocrEp = extractEpisodeNumberFromOCR(ocrText);
       if (ocrEp !== null) {
         ep = ocrEp;
@@ -273,7 +281,6 @@ async function checkToon(toon, worker) {
 // ─── 메인 ────────────────────────────────────────────────────────
 async function main() {
   console.log("=== 인스타툰 배치 체크 시작 ===");
-  const worker = await createWorker("kor+eng");
 
   const { data: toons, error: toonsError } = await supabase
     .from("toons")
@@ -316,7 +323,7 @@ async function main() {
       continue;
     }
     try {
-      const result = await checkToon(toon, worker);
+      const result = await checkToon(toon);
       if (result?.found) {
         if (!resultsByDevice[toon.device_id]) resultsByDevice[toon.device_id] = [];
         resultsByDevice[toon.device_id].push({
@@ -343,7 +350,6 @@ async function main() {
     }
   }
 
-  await worker.terminate();
   console.log("=== 완료 ===");
 }
 

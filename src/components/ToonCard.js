@@ -6,9 +6,6 @@ import {
   TouchableOpacity,
   Animated,
   Linking,
-  LayoutAnimation,
-  Platform,
-  UIManager,
 } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import Svg, { Path, Circle, Polygon } from "react-native-svg";
@@ -21,10 +18,6 @@ import {
   advanceEpisode,
 } from "../services/toon-service";
 import { useTheme } from "../context/ThemeContext";
-
-if (Platform.OS === "android") {
-  UIManager.setLayoutAnimationEnabledExperimental?.(true);
-}
 
 // ── Shape icon ──────────────────────────────────────
 const SHAPE_COLORS = ["#aebf92", "#ffc6a5", "#c67139", "#d67f48", "#8fa073", "#9ba8cc", "#f5c0a0", "#b8cfa8"];
@@ -144,12 +137,6 @@ export default function ToonCard({ toon, onUpdate, onEdit, onMessage }) {
     : `${toon.lastEpisode || 0}화`;
 
   const toggleExpand = () => {
-    LayoutAnimation.configureNext({
-      duration: 260,
-      update: { type: LayoutAnimation.Types.spring, springDamping: 0.85 },
-      create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-      delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-    });
     setExpanded((v) => !v);
   };
 

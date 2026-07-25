@@ -16,8 +16,9 @@ import { ThemeProvider } from "./src/context/ThemeContext";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
+    // 포그라운드에서 받은 알림은 배너/소리 없이 처리 — 시스템이 이미 한 번 보여줌
+    shouldShowAlert: false,
+    shouldPlaySound: false,
     shouldSetBadge: true,
   }),
 });

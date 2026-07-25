@@ -181,6 +181,7 @@ export async function advanceEpisode(id, episode, remainingPosts) {
   supabase.from('toons').update({
     read_episode: episode,
     has_new_episode: remainingPosts.length > 0,
+    unread_posts: remainingPosts,   // 읽은 화 제거된 목록으로 동기화
     updated_at: t.updatedAt,
   }).eq('id', id).then(({ error }) => {
     if (error) console.warn('[Supabase] advanceEpisode 실패:', error.message);
@@ -369,12 +370,27 @@ export async function checkToon(toonInput) {
 }
 
 // 배치가 Supabase를 업데이트했지만 로컬에 반영 안 된 경우 동기화
+// 알림 data 페이로드로 로컬 스토어 즉시 업데이트 (네트워크 호출 없음)
+export async function applyNotificationUpdates(updates) {
+  if (!Array.isArray(updates) || updates.length === 0) return;
+  const toons = await getToons();
+  let changed = false;
+  for (const { toonId, unreadPosts } of updates) {
+    const t = toons.find((t) => t.id === toonId);
+    if (!t || !Array.isArray(unreadPosts) || unreadPosts.length === 0) continue;
+    t.hasNewEpisode = true;
+    t.unreadPosts = unreadPosts;
+    changed = true;
+  }
+  if (changed) await save(toons);
+}
+
 export async function syncFromSupabase() {
   try {
     const deviceId = await getDeviceId();
     const { data: remoteToons } = await supabase
       .from('toons')
-      .select('id, has_new_episode, last_episode')
+      .select('id, has_new_episode, last_episode, last_post_url, unread_posts')
       .eq('device_id', deviceId);
 
     if (!remoteToons?.length) return;
@@ -385,12 +401,24 @@ export async function syncFromSupabase() {
     for (const remote of remoteToons) {
       const local = toons.find((t) => t.id === remote.id);
       if (!local) continue;
-      if (remote.has_new_episode && !local.hasNewEpisode) {
-        local.hasNewEpisode = true;
+      if (remote.has_new_episode) {
+        if (!local.hasNewEpisode) {
+          local.hasNewEpisode = true;
+          changed = true;
+        }
         if (remote.last_episode > (local.lastEpisode || 0)) {
           local.lastEpisode = remote.last_episode;
+          changed = true;
         }
-        changed = true;
+        if (remote.last_post_url && remote.last_post_url !== local.lastPostUrl) {
+          local.lastPostUrl = remote.last_post_url;
+          changed = true;
+        }
+        // 서버가 만들어준 unread_posts가 있으면 바로 반영
+        if (Array.isArray(remote.unread_posts) && remote.unread_posts.length > 0) {
+          local.unreadPosts = remote.unread_posts;
+          changed = true;
+        }
       }
     }
 
@@ -400,16 +428,24 @@ export async function syncFromSupabase() {
   }
 }
 
-// hasNewEpisode는 있는데 unreadPosts가 없는 툰의 링크 목록 채우기
+// unreadPosts가 없는 툰만 채우기 — 이미 있으면 덮어쓰지 않음
 export async function fillMissingUnreadPosts() {
   const toons = await getToons();
-  // hasNewEpisode인 툰은 항상 재검사 — lastEpisode와 readEpisode 사이 누락 화수 포함
-  const needsFill = toons.filter((t) => t.hasNewEpisode);
+  const needsFill = toons.filter((t) => t.hasNewEpisode && !(t.unreadPosts?.length > 0));
 
   for (const toon of needsFill) {
     try {
       const allPosts = await fetchLatestPosts(toon.username);
-      const unreadPosts = buildUnreadPosts(toon, allPosts);
+      let unreadPosts = buildUnreadPosts(toon, allPosts);
+
+      // 캡션 매칭 실패 시 — 서버가 감지한 마지막 게시물 URL로 fallback
+      if (unreadPosts.length === 0 && toon.lastPostUrl) {
+        const ep = toon.lastEpisode && toon.lastEpisode > (toon.readEpisode || 0)
+          ? toon.lastEpisode
+          : null;
+        unreadPosts = [{ episode: ep, url: toon.lastPostUrl }];
+      }
+
       if (unreadPosts.length > 0) {
         await updateToon(toon.id, { unreadPosts });
       }
@@ -445,20 +481,19 @@ async function sendLocalNotification(seriesName, episodes, isComplete = false) {
     ? episodes
     : episodes != null ? [episodes] : [];
 
-  const title = isComplete
-    ? `📚 ${seriesName} 완결!`
-    : `📚 ${seriesName} 새 편!`;
+  const title = seriesName;
   let body;
   if (isComplete) {
     body = epList.length > 0
-      ? `${epList.join('화, ')}화로 완결됐어요. 지금 확인해보세요!`
-      : `완결됐어요. 지금 확인해보세요!`;
+      ? `${epList[epList.length - 1]}화로 완결됐어요!`
+      : `완결됐어요!`;
   } else if (epList.length > 1) {
-    body = `${epList.join('화, ')}화가 추가되었어요. 지금 확인해보세요!`;
+    const sorted = [...epList].sort((a, b) => a - b);
+    body = `${sorted[0]}화~${sorted[sorted.length - 1]}화가 나왔어요!`;
   } else if (epList.length === 1) {
-    body = `${epList[0]}화가 올라왔어요. 지금 확인해보세요!`;
+    body = `${epList[0]}화가 나왔어요!`;
   } else {
-    body = `새 게시물이 올라왔어요. 지금 확인해보세요!`;
+    body = `새 편이 나왔어요!`;
   }
   await Notifications.scheduleNotificationAsync({
     content: {

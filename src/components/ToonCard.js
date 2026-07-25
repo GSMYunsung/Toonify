@@ -184,12 +184,10 @@ export default function ToonCard({ toon, onUpdate, onEdit, onMessage }) {
   };
 
   const renderRightActions = () => (
-    <View style={st.deleteReveal}>
-      <TouchableOpacity style={st.deleteBtn} onPress={handleDelete}>
-        <Feather name="trash-2" size={20} color={theme.deleteText} />
-        <Text style={st.deleteTxt}>삭제</Text>
-      </TouchableOpacity>
-    </View>
+    <TouchableOpacity style={st.deleteReveal} onPress={handleDelete} activeOpacity={0.75}>
+      <Feather name="trash-2" size={20} color={theme.deleteText} />
+      <Text style={st.deleteTxt}>삭제</Text>
+    </TouchableOpacity>
   );
 
   const st = s(theme);
@@ -322,11 +320,11 @@ const s = (theme) =>
       alignSelf: "stretch",
       justifyContent: "center",
       alignItems: "center",
+      gap: 5,
       backgroundColor: theme.deleteBg,
       borderTopRightRadius: 28,
       borderBottomRightRadius: 28,
     },
-    deleteBtn: { alignItems: "center", gap: 5 },
     deleteTxt: { color: theme.deleteText, fontSize: 12, fontWeight: "700" },
 
     cardContainer: {

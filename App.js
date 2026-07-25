@@ -66,10 +66,10 @@ export default function App() {
     setup();
   }, []);
 
+
   useEffect(() => {
     if (fontsLoaded) {
-      const timer = setTimeout(() => SplashScreen.hideAsync(), 2000);
-      return () => clearTimeout(timer);
+      SplashScreen.hideAsync();
     }
   }, [fontsLoaded]);
 

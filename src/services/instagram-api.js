@@ -56,13 +56,25 @@ export async function fetchPostByUrl(postUrl) {
     console.log('[fetchPostByUrl] 프로필에서 가져온 포스트 수:', posts.length);
 
     const matched = posts.find(p => p.url?.includes(shortcode));
-    console.log('[fetchPostByUrl] shortcode 매칭 포스트:', matched ?? '없음 (최신 포스트 사용)');
+    console.log('[fetchPostByUrl] shortcode 매칭 포스트:', matched ?? '없음 — 최신 12개 밖, shortcode만 저장');
 
-    const post = matched ?? posts[0];
+    if (matched) {
+      return {
+        username,
+        caption: matched.caption ?? '',
+        thumbnailUrl: matched.thumbnailUrl ?? '',
+        id: matched.id,
+        timestamp: matched.timestamp,
+      };
+    }
+    // 앵커 게시물이 최신 12개 밖 → shortcode만 저장, timestamp=0
+    // checkToon이 전체 12개를 오래된 순으로 처리하는 fallback으로 동작함
     return {
       username,
-      caption: post?.caption ?? '',
-      thumbnailUrl: post?.thumbnailUrl ?? '',
+      caption: '',
+      thumbnailUrl: '',
+      id: shortcode,
+      timestamp: 0,
     };
   }
 
@@ -90,7 +102,7 @@ export async function fetchPostByUrl(postUrl) {
       const thumbnailUrl = data.thumbnail_url ?? '';
 
       console.log('[oEmbed] 파싱 결과 → username:', username, '/ caption:', caption?.slice(0, 60));
-      if (username) return { username, caption, thumbnailUrl };
+      if (username) return { username, caption, thumbnailUrl, id: shortcode, timestamp: 0 };
     }
   } catch (e) {
     console.warn('[oEmbed] 실패, OG 폴백 시도:', e.message);
@@ -132,10 +144,10 @@ export async function fetchPostByUrl(postUrl) {
 
   if (!username) throw new Error('계정 정보를 찾을 수 없어요.\n잠시 후 다시 시도해주세요.');
 
-  return { username, caption, thumbnailUrl };
+  return { username, caption, thumbnailUrl, id: shortcode, timestamp: 0 };
 }
 
-function parsePosts(data) {
+export function parsePosts(data) {
   const items = data?.latestPosts ?? [];
 
   return items.map(item => ({

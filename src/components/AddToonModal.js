@@ -9,11 +9,10 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   Platform,
-  Alert,
   Animated,
-  PanResponder,
   ActivityIndicator,
 } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { addToon, updateToonInfo, checkToon } from "../services/toon-service";
 import * as Clipboard from "expo-clipboard";
 import { fetchPostByUrl } from "../services/instagram-api";
@@ -24,328 +23,479 @@ import {
   extractSeriesName,
 } from "../hooks/useKeywordDetector";
 import { useTheme } from "../context/ThemeContext";
+import { FONTS } from "../theme";
 
-export default function AddToonModal({ visible, onClose, onAdded, editToon }) {
+export default function AddToonModal({ visible, onClose, onAdded, onUpdate, editToon }) {
   const { theme } = useTheme();
-  const isEditMode = !!editToon;
+  const isEdit = !!editToon;
 
   const [username, setUsername] = useState("");
   const [seriesName, setSeriesName] = useState("");
   const [lastEpisode, setLastEpisode] = useState("");
-  const [urlInput, setUrlInput] = useState("");
-  const [urlLoading, setUrlLoading] = useState(false);
-  const [urlError, setUrlError] = useState("");
 
-  // 수정 모드 진입 시 기존 값 채우기
+  const [linkUrl, setLinkUrl] = useState("");
+  const [imported, setImported] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState("");
+  const [ocrRunning, setOcrRunning] = useState(false);
+  const [ocrDetected, setOcrDetected] = useState(false);
+
+  const sheetY = useRef(new Animated.Value(0)).current;
+  const sheetDragging = useRef(false);
+  const sheetStartY = useRef(0);
+
   useEffect(() => {
     if (editToon) {
       setUsername(editToon.username || "");
       setSeriesName(editToon.seriesName || "");
-      setLastEpisode(
-        String(editToon.readEpisode || editToon.lastEpisode || ""),
-      );
+      setLastEpisode(String(editToon.readEpisode || editToon.lastEpisode || ""));
     } else {
-      setUsername("");
-      setSeriesName("");
-      setLastEpisode("");
+      setUsername(""); setSeriesName(""); setLastEpisode("");
     }
-    setUrlInput("");
-    setUrlError("");
-    setUrlLoading(false);
+    setLinkUrl("");
+    setImported(false);
+    setImporting(false);
+    setImportError("");
+    setOcrRunning(false);
+    setOcrDetected(false);
+    sheetY.setValue(0);
+  }, [visible, editToon]);
 
-    if (visible && !editToon) {
-      Clipboard.getStringAsync().then((text) => {
-        if (/instagram\.com\/(p|reel)\/([A-Za-z0-9_-]+)/.test(text)) {
-          Alert.alert(
-            "인스타 링크 감지",
-            "클립보드에 인스타그램 링크가 있어요.\n자동으로 불러올까요?",
-            [
-              { text: "아니요", style: "cancel" },
-              { text: "불러오기", onPress: () => handleUrlChange(text) },
-            ],
-          );
-        }
-      });
-    }
-  }, [editToon, visible]);
-
-  const translateY = useRef(new Animated.Value(0)).current;
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponderCapture: (_, { dy }) => dy > 5,
-      onPanResponderMove: (_, { dy }) => {
-        if (dy > 0) translateY.setValue(dy);
-      },
-      onPanResponderRelease: (_, { dy, vy }) => {
-        if (dy > 100 || vy > 0.5) {
-          Animated.timing(translateY, {
-            toValue: 600,
-            duration: 200,
-            useNativeDriver: true,
-          }).start(() => {
-            translateY.setValue(0);
-            onClose();
-          });
-        } else {
-          Animated.spring(translateY, {
-            toValue: 0,
-            useNativeDriver: true,
-          }).start();
-        }
-      },
-    }),
-  ).current;
-
-  const handleUrlChange = async (text) => {
-    setUrlInput(text);
-    setUrlError("");
-
-    const isInstagramUrl = /instagram\.com\/(p|reel)\/([A-Za-z0-9_-]+)/.test(
-      text,
-    );
-    console.log(
-      "[handleUrlChange] 입력:",
-      text,
-      "/ Instagram URL 감지:",
-      isInstagramUrl,
-    );
-    if (!isInstagramUrl) return;
-
-    setUrlLoading(true);
+  const handleImportFromUrl = async (url) => {
+    if (!url || importing) return;
+    setImporting(true);
+    setImportError("");
     try {
-      const post = await fetchPostByUrl(text.trim());
-      console.log("[handleUrlChange] fetchPostByUrl 결과:", post);
-
+      const post = await fetchPostByUrl(url);
       if (post.username) setUsername(post.username);
 
-      let name = extractSeriesName(post.caption);
-      let ep = extractEpisodeNumber(post.caption);
-      console.log("[handleUrlChange] caption 파싱 → name:", name, "/ ep:", ep);
+      let name = extractSeriesName(post.caption || "");
+      let ep = extractEpisodeNumber(post.caption || "");
 
       if (ep === null && post.thumbnailUrl) {
-        console.log(
-          "[handleUrlChange] 캡션에 화수 없음 → OCR 시도:",
-          post.thumbnailUrl.slice(0, 60),
-        );
+        setOcrRunning(true);
         const ocrText = await extractTextFromImage(post.thumbnailUrl);
-        console.log("[handleUrlChange] OCR 결과:", ocrText?.slice(0, 100));
+        setOcrRunning(false);
         if (ocrText) {
-          ep = extractEpisodeNumberFromOCR(ocrText);
-          name = ocrText.trim();
-          console.log("[handleUrlChange] OCR 파싱 → name:", name, "/ ep:", ep);
+          const ocrEp = extractEpisodeNumberFromOCR(ocrText);
+          if (ocrEp !== null) { ep = ocrEp; setOcrDetected(true); }
+          name = extractSeriesName(ocrText) || name;
         }
       }
 
       if (name) setSeriesName(name);
       if (ep !== null) setLastEpisode(String(ep));
+      setImported(true);
     } catch (e) {
-      console.error("[handleUrlChange] 에러:", e.message);
-      setUrlError(e.message);
+      setImportError(e.message);
     } finally {
-      setUrlLoading(false);
+      setImporting(false);
     }
   };
 
-  const handleAdd = async () => {
-    const cleanUsername = username.trim().replace(/^@+/, "");
-    if (!cleanUsername || !seriesName.trim()) {
-      Alert.alert("입력 오류", "인스타 계정과 시리즈 이름을 입력해주세요.");
-      return;
+  const handlePasteFromClipboard = async () => {
+    const text = (await Clipboard.getStringAsync()).trim();
+    if (/instagram\.com\/(p|reel)\/([A-Za-z0-9_-]+)/.test(text)) {
+      setLinkUrl(text);
+      handleImportFromUrl(text);
+    } else {
+      setImportError("클립보드에 인스타그램 링크가 없어요");
     }
-    if (isEditMode) {
+  };
+
+  const handleSave = async () => {
+    const clean = username.trim().replace(/^@+/, "");
+    if (!clean || !seriesName.trim()) return;
+
+    if (isEdit) {
       await updateToonInfo(editToon.id, {
         seriesName: seriesName.trim(),
         lastEpisode: parseInt(lastEpisode) || 0,
       });
+      onAdded();
     } else {
+      const ep = parseInt(lastEpisode) || 0;
+      const initialHistory = (ep > 0 && linkUrl) ? [{ episode: ep, url: linkUrl.trim() }] : [];
       const newToon = await addToon({
-        username: cleanUsername,
+        username: clean,
         seriesName: seriesName.trim(),
-        lastEpisode: parseInt(lastEpisode) || 0,
+        lastEpisode: ep,
+        episodeHistory: initialHistory,
       });
-      // 추가 직후 바로 새 에피소드 확인 (비동기, 실패해도 무관)
-      checkToon(newToon).then(() => onAdded()).catch(() => {});
+      // background episode check — only refresh list, no toast
+      checkToon(newToon).then(() => onUpdate?.()).catch(() => {});
+      onAdded();
     }
-    setUsername("");
-    setSeriesName("");
-    setLastEpisode("");
-    onAdded();
     onClose();
   };
 
-  const s = styles(theme);
+  // Handle drag to dismiss
+  const sheetCurrentY = useRef(0);
+  const onHandlePointerDown = (e) => {
+    sheetDragging.current = true;
+    sheetStartY.current = e.nativeEvent.pageY;
+  };
+  const onHandlePointerMove = (e) => {
+    if (!sheetDragging.current) return;
+    const dy = Math.max(0, e.nativeEvent.pageY - sheetStartY.current);
+    sheetCurrentY.current = dy;
+    sheetY.setValue(dy);
+  };
+  const onHandlePointerUp = () => {
+    sheetDragging.current = false;
+    if (sheetCurrentY.current > 90) {
+      Animated.timing(sheetY, { toValue: 600, duration: 180, useNativeDriver: true }).start(onClose);
+    } else {
+      Animated.spring(sheetY, { toValue: 0, useNativeDriver: true }).start();
+    }
+    sheetCurrentY.current = 0;
+  };
+
+  const saveDisabled = !username.trim() || !seriesName.trim() || (!isEdit && !imported);
+
+  const st = s(theme);
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent
-      onRequestClose={onClose}
-    >
-      <View style={s.container} {...panResponder.panHandlers}>
-        <TouchableOpacity
-          style={s.backdrop}
-          activeOpacity={1}
-          onPress={onClose}
-        />
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "padding"}
-        >
-          <Animated.View style={[s.sheet, { transform: [{ translateY }] }]}>
-            <View style={s.dragArea}>
-              <View style={s.handle} />
-              <Text style={s.title}>
-                {isEditMode ? "툰 수정하기" : "툰 추가하기"}
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <TouchableOpacity style={st.backdrop} activeOpacity={1} onPress={onClose} />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={st.keyboardView}
+      >
+        <Animated.View style={[st.sheet, { transform: [{ translateY: sheetY }] }]}>
+          {/* Drag handle */}
+          <View
+            style={st.dragArea}
+            onStartShouldSetResponder={() => true}
+            onResponderGrant={onHandlePointerDown}
+            onResponderMove={onHandlePointerMove}
+            onResponderRelease={onHandlePointerUp}
+          >
+            <View style={st.handle} />
+          </View>
+
+          {/* Title row */}
+          <View style={st.titleRow}>
+            <Text style={st.title}>{isEdit ? "툰 수정" : "툰 추가"}</Text>
+            <TouchableOpacity onPress={onClose} style={st.closeBtn}>
+              <Feather name="x" size={20} color={theme.muted} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Link paste button (add mode only) */}
+            {!isEdit && (
+              <>
+                {!imported && !importing && (
+                  <TouchableOpacity style={st.pasteBtn} onPress={handlePasteFromClipboard} activeOpacity={0.75}>
+                    <Feather name="clipboard" size={15} color={theme.ctaText} />
+                    <Text style={st.pasteBtnText}>링크 붙여넣기</Text>
+                  </TouchableOpacity>
+                )}
+                {importing && (
+                  <View style={st.loadingRow}>
+                    <ActivityIndicator size="small" color={theme.accent} />
+                    <Text style={st.loadingText}>
+                      {ocrRunning ? "이미지에서 화수 읽는 중..." : "게시물 정보 불러오는 중..."}
+                    </Text>
+                  </View>
+                )}
+                {imported && !importing && (
+                  <View style={st.importedRow}>
+                    <Feather name="check-circle" size={13} color={theme.tagCompleteColor} />
+                    <Text style={st.importedText} numberOfLines={1}>{linkUrl}</Text>
+                    <TouchableOpacity onPress={() => {
+                      setLinkUrl(""); setImported(false); setImportError("");
+                      setUsername(""); setSeriesName(""); setLastEpisode("");
+                    }}>
+                      <Feather name="x" size={14} color={theme.muted} />
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {importError ? (
+                  <Text style={st.errorText}>{importError}</Text>
+                ) : null}
+              </>
+            )}
+
+            {/* Account */}
+            <View style={st.fieldLabelRow}>
+              <Text style={st.label}>
+                {isEdit ? (
+                  <>계정명 <Feather name="lock" size={10} color={theme.muted} /></>
+                ) : "계정명"}
               </Text>
             </View>
+            <TextInput
+              style={[st.input, (!imported || importing || isEdit) && st.inputLocked]}
+              value={username}
+              onChangeText={setUsername}
+              placeholder={imported ? "@instagram_id" : "링크를 먼저 붙여넣어 주세요"}
+              placeholderTextColor={theme.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={imported && !isEdit && !importing}
+            />
 
-            <ScrollView
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
-              {!isEditMode && (
-                <>
-                  <Text style={s.label}>인스타그램 링크</Text>
-                  <View style={s.urlRow}>
-                    <TextInput
-                      style={[s.input, s.urlInput, !urlInput && s.urlInputHint]}
-                      placeholder="인스타툰 게시물 링크를 복사 붙여넣기해보세요"
-                      placeholderTextColor={theme.textSub}
-                      value={urlInput}
-                      editable={false}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                    {urlLoading && (
-                      <ActivityIndicator
-                        style={s.urlSpinner}
-                        color={theme.accent}
-                        size="small"
-                      />
-                    )}
-                  </View>
-                  {urlError ? <Text style={s.urlError}>{urlError}</Text> : null}
-                  <View style={s.divider} />
-                </>
+            {/* Series name */}
+            <View style={st.fieldLabelRow}>
+              <Text style={st.label}>시리즈명</Text>
+            </View>
+            <TextInput
+              style={[st.input, (!imported || importing) && st.inputLocked]}
+              value={seriesName}
+              onChangeText={setSeriesName}
+              placeholder={imported ? "예: 오늘의 하루" : "링크를 먼저 붙여넣어 주세요"}
+              placeholderTextColor={theme.muted}
+              editable={imported && !importing}
+            />
+
+            {/* Episode */}
+            <View style={st.fieldLabelRow}>
+              <Text style={st.label}>마지막 본 화수</Text>
+              {ocrDetected && (
+                <View style={st.ocrBadge}>
+                  <Text style={st.ocrBadgeText}>OCR로 인식됨</Text>
+                </View>
               )}
+            </View>
+            <TextInput
+              style={[st.input, (!imported || importing || ocrRunning) && st.inputLocked]}
+              value={lastEpisode}
+              onChangeText={(v) => { setLastEpisode(v); setOcrDetected(false); }}
+              placeholder={imported ? "예: 24" : "링크를 먼저 붙여넣어 주세요"}
+              placeholderTextColor={theme.muted}
+              keyboardType="number-pad"
+              editable={imported && !importing && !ocrRunning}
+            />
 
-              <Text style={s.label}>인스타 계정</Text>
-              <TextInput
-                style={[s.input, isEditMode && s.inputDisabled]}
-                placeholder="@username"
-                placeholderTextColor={theme.textSub}
-                value={username}
-                onChangeText={setUsername}
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!isEditMode}
-              />
-
-              <Text style={s.label}>시리즈 이름</Text>
-              <TextInput
-                style={s.input}
-                placeholder="예: 하루방툰"
-                placeholderTextColor={theme.textSub}
-                value={seriesName}
-                onChangeText={setSeriesName}
-              />
-
-              <Text style={s.label}>마지막으로 본 화수</Text>
-              <TextInput
-                style={s.input}
-                placeholder="처음이면 0"
-                placeholderTextColor={theme.textSub}
-                value={lastEpisode}
-                onChangeText={setLastEpisode}
-                keyboardType="number-pad"
-              />
-
-              <TouchableOpacity style={s.addButton} onPress={handleAdd}>
-                <Text style={s.addButtonText}>
-                  {isEditMode ? "수정하기" : "추가하기"}
-                </Text>
+            {/* Buttons */}
+            <View style={st.btnRow}>
+              <TouchableOpacity style={st.cancelBtn} onPress={onClose}>
+                <Text style={st.cancelText}>취소</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.cancelButton} onPress={onClose}>
-                <Text style={s.cancelButtonText}>취소</Text>
+              <TouchableOpacity
+                style={[st.saveBtn, saveDisabled && st.saveBtnDisabled]}
+                onPress={handleSave}
+                disabled={saveDisabled}
+              >
+                <Text style={st.saveText}>{isEdit ? "저장" : "추가"}</Text>
+                <View style={st.saveChip}>
+                  <Feather name="arrow-right" size={12} color={theme.ctaChipColor} />
+                </View>
               </TouchableOpacity>
-            </ScrollView>
-          </Animated.View>
-        </KeyboardAvoidingView>
-      </View>
+            </View>
+          </ScrollView>
+        </Animated.View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
-const styles = (theme) =>
+const s = (theme) =>
   StyleSheet.create({
-    container: { flex: 1, justifyContent: "flex-end" },
     backdrop: {
       ...StyleSheet.absoluteFillObject,
-      backgroundColor: "rgba(0,0,0,0.5)",
+      backgroundColor: theme.overlayBg,
     },
+    keyboardView: { flex: 1, justifyContent: "flex-end" },
     sheet: {
-      backgroundColor: theme.sheet,
-      borderTopLeftRadius: 28,
-      borderTopRightRadius: 28,
-      padding: 24,
+      backgroundColor: theme.bg,
+      borderTopLeftRadius: 22,
+      borderTopRightRadius: 22,
+      padding: 20,
       paddingBottom: 40,
+      maxHeight: "88%",
+      shadowColor: theme.shadowColor,
+      shadowOffset: { width: 0, height: -4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 16,
+      elevation: 12,
     },
-    dragArea: { alignItems: "center", marginBottom: 16, paddingBottom: 4 },
+    dragArea: { alignItems: "center", paddingVertical: 10 },
     handle: {
-      width: 40,
-      height: 4,
-      borderRadius: 2,
-      backgroundColor: theme.handle,
-      marginBottom: 20,
+      width: 38,
+      height: 5,
+      borderRadius: 999,
+      backgroundColor: theme.divider,
+    },
+    titleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 18,
     },
     title: {
-      fontSize: 18,
-      fontWeight: "700",
+      fontFamily: FONTS.heading,
+      fontSize: 19,
       color: theme.text,
-      alignSelf: "flex-start",
+    },
+    closeBtn: { padding: 4 },
+
+    // Clipboard banner
+    clipboardBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      backgroundColor: theme.tagNewBg,
+      borderRadius: 16,
+      padding: 12,
+      marginBottom: 14,
+    },
+    clipboardText: {
+      flex: 1,
+      fontSize: 12.5,
+      color: theme.tagNewColor,
+      lineHeight: 18,
+    },
+    importBtn: {
+      backgroundColor: theme.ctaBg,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: 999,
+    },
+    importBtnText: {
+      color: theme.ctaText,
+      fontSize: 12.5,
+      fontWeight: "700",
+    },
+
+    loadingRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      backgroundColor: theme.surface,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      marginBottom: 14,
+    },
+    loadingText: {
+      fontSize: 13,
+      color: theme.muted,
+      flex: 1,
+    },
+    anchorBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      marginTop: -8,
+      marginBottom: 14,
+      paddingHorizontal: 4,
+    },
+    anchorText: {
+      fontSize: 11.5,
+      color: theme.tagCompleteColor,
+      flex: 1,
+    },
+    importingRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 14,
+    },
+    importingText: { fontSize: 12.5, color: theme.muted },
+    errorText: { fontSize: 12, color: theme.deleteBg, marginBottom: 10 },
+
+    // Paste button
+    pasteBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      backgroundColor: theme.ctaBg,
+      borderRadius: 999,
+      paddingVertical: 14,
+      marginBottom: 14,
+    },
+    pasteBtnText: {
+      fontSize: 14,
+      fontWeight: "700",
+      color: theme.ctaText,
+    },
+    importedRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      backgroundColor: theme.surface,
+      borderRadius: 999,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      marginBottom: 14,
+    },
+    importedText: {
+      flex: 1,
+      fontSize: 12,
+      color: theme.muted,
+    },
+
+    fieldLabelRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: 5,
     },
     label: {
-      fontSize: 11,
+      fontSize: 11.5,
+      color: theme.muted,
+    },
+    fieldSpin: { marginLeft: 6 },
+    ocrBadge: {
+      marginLeft: 6,
+      backgroundColor: theme.accent2_100,
+      paddingHorizontal: 7,
+      paddingVertical: 1,
+      borderRadius: 999,
+    },
+    ocrBadgeText: {
+      fontSize: 10,
+      color: theme.accent2_500,
       fontWeight: "700",
-      color: theme.sectionText,
-      letterSpacing: 1,
-      marginBottom: 8,
-      textTransform: "uppercase",
     },
     input: {
-      borderWidth: 1.5,
-      borderColor: theme.inputBorder,
-      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: theme.divider,
+      borderRadius: 999,
       paddingHorizontal: 14,
-      paddingVertical: 13,
-      fontSize: 15,
+      paddingVertical: 12,
+      fontSize: 14,
       color: theme.text,
-      backgroundColor: theme.card,
-      marginBottom: 16,
+      backgroundColor: theme.surface,
+      marginBottom: 14,
     },
-    inputDisabled: {
-      opacity: 0.4,
-    },
-    addButton: {
-      backgroundColor: theme.accent,
-      borderRadius: 16,
-      paddingVertical: 15,
+    inputLocked: { opacity: 0.45 },
+
+    btnRow: { flexDirection: "row", gap: 10, marginTop: 4 },
+    cancelBtn: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: theme.divider,
+      borderRadius: 999,
+      paddingVertical: 14,
       alignItems: "center",
-      marginBottom: 10,
     },
-    addButtonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-    cancelButton: { alignItems: "center", paddingVertical: 10 },
-    cancelButtonText: { color: theme.textSub, fontSize: 15 },
-    urlRow: { position: "relative" },
-    urlInput: { paddingRight: 44, marginBottom: 4 },
-    urlInputHint: { opacity: 0.5, borderStyle: "dashed" },
-    urlSpinner: { position: "absolute", right: 14, top: 14 },
-    urlError: {
-      fontSize: 12,
-      color: theme.delete,
-      marginBottom: 12,
-      marginTop: 2,
+    cancelText: { fontSize: 14, color: theme.text, fontWeight: "600" },
+    saveBtn: {
+      flex: 1,
+      backgroundColor: theme.ctaBg,
+      borderRadius: 999,
+      paddingVertical: 14,
+      paddingRight: 6,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
     },
-    divider: { height: 1, backgroundColor: theme.border, marginVertical: 16 },
+    saveBtnDisabled: { opacity: 0.4 },
+    saveText: { color: theme.ctaText, fontSize: 14, fontWeight: "700" },
+    saveChip: {
+      width: 20,
+      height: 20,
+      borderRadius: 999,
+      backgroundColor: theme.ctaChipBg,
+      justifyContent: "center",
+      alignItems: "center",
+    },
   });

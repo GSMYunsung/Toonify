@@ -4,15 +4,19 @@
 const { createClient } = require("@supabase/supabase-js");
 if (!globalThis.WebSocket) globalThis.WebSocket = require("ws");
 
+const { createWorker } = require("tesseract.js");
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const HASDATA_KEY = process.env.HASDATA_KEY;
-const OCR_SPACE_KEY = process.env.OCR_SPACE_KEY;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 // ─── 화수 추출 (캡션용) ───────────────────────────────────────────
 function extractEpisodeNumber(text) {
+  // 원문자 ①-⑳ → 일반 숫자로 변환 (예: ② → 2)
+  text = text.replace(/[①-⑳]/g, (c) => String(c.charCodeAt(0) - 9311));
+
   const patterns = [
     /(\d+)\s*화/,
     /(\d+)\s*편/,
@@ -42,7 +46,11 @@ function extractEpisodeNumberFromOCR(text) {
 }
 
 function isCompleteEpisode(text) {
-  return /완결|완\b/.test(text);
+  return /완결/.test(text)
+    || /최종화/.test(text)
+    || /마지막\s*화/.test(text)
+    || /(?:^|[\s(\[「（【])완(?:$|[\s)\]」）】.,!?])/.test(text)  // 완 전후 공백·괄호·구두점
+    || /[(\[「（【〔][가-힣]+[)\]」）】〕]/.test(text);            // (완), （완）, 【최종화】 등
 }
 
 // ─── Instagram 게시물 가져오기 ────────────────────────────────────
@@ -64,60 +72,69 @@ async function fetchLatestPosts(username) {
   }));
 }
 
-// ─── OCR ─────────────────────────────────────────────────────────
-async function extractTextFromImage(imageUrl) {
+// ─── OCR (Tesseract.js, 토큰 불필요) ─────────────────────────────
+async function extractTextFromImage(imageUrl, worker) {
   try {
-    const params = new URLSearchParams({
-      apikey: OCR_SPACE_KEY,
-      url: imageUrl,
-      language: "kor",
-      isOverlayRequired: "false",
-      OCREngine: "3",
-    });
-    const res = await fetch(`https://api.ocr.space/parse/imageurl?${params}`);
-    const data = await res.json();
-    return data?.ParsedResults?.[0]?.ParsedText ?? "";
+    const { data: { text } } = await worker.recognize(imageUrl);
+    return text || "";
   } catch {
     return "";
   }
 }
 
-// ─── Expo Push 알림 전송 ──────────────────────────────────────────
-async function sendPushNotification(tokens, seriesName, episodes, isComplete) {
-  const episode = Array.isArray(episodes) ? Math.max(...episodes) : episodes;
-  const title = isComplete
-    ? `📚 ${seriesName} 완결!`
-    : `📚 ${seriesName} 새 편!`;
-  let body;
-  if (isComplete) {
-    body = episode != null ? `${episode}화로 완결됐어요!` : "완결됐어요!";
-  } else if (Array.isArray(episodes) && episodes.length > 1) {
-    const sorted = [...episodes].sort((a, b) => a - b);
-    body = `${sorted[0]}화~${sorted[sorted.length - 1]}화가 올라왔어요!`;
-  } else if (episode != null) {
-    body = `${episode}화가 올라왔어요!`;
+// ─── Expo Push 알림 전송 (모든 툰 결과 한 번에) ──────────────────
+async function sendPushNotification(token, results) {
+  // results: [{ seriesName, episodes, isComplete, unreadPosts, toonId }]
+  const updates = results.map((r) => ({
+    toonId: r.toonId,
+    unreadPosts: r.unreadPosts,
+  }));
+
+  let title, body;
+  if (results.length === 1) {
+    const r = results[0];
+    const eps = r.episodes.filter(Boolean).sort((a, b) => a - b);
+    title = r.seriesName;
+    if (r.isComplete) {
+      body = eps.length ? `${eps[eps.length - 1]}화로 완결됐어요!` : "완결됐어요!";
+    } else if (eps.length > 1) {
+      body = `${eps[0]}화~${eps[eps.length - 1]}화가 나왔어요!`;
+    } else if (eps.length === 1) {
+      body = `${eps[0]}화가 나왔어요!`;
+    } else {
+      body = "새 편이 나왔어요!";
+    }
   } else {
-    body = "새 게시물이 올라왔어요!";
+    // 여러 툰 — 요약
+    title = "새 에피소드";
+    const lines = results.map((r) => {
+      const eps = r.episodes.filter(Boolean).sort((a, b) => a - b);
+      if (eps.length === 0) return r.seriesName;
+      if (eps.length === 1) return `${r.seriesName} ${eps[0]}화`;
+      return `${r.seriesName} ${eps[0]}~${eps[eps.length - 1]}화`;
+    });
+    body = lines.join(", ");
   }
 
-  const messages = tokens.map((token) => ({
+  const message = {
     to: token,
     title,
     body,
     sound: "default",
-  }));
+    data: { updates },
+  };
 
   const res = await fetch("https://exp.host/--/api/v2/push/send", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(messages),
+    body: JSON.stringify(message),
   });
   const result = await res.json();
   console.log(`[Push] 전송 결과:`, JSON.stringify(result?.data ?? result));
 }
 
 // ─── 툰 하나 확인 ────────────────────────────────────────────────
-async function checkToon(toon) {
+async function checkToon(toon, worker) {
   const allPosts = await fetchLatestPosts(toon.username);
   const posts = [...allPosts]
     .sort((a, b) => b.timestamp - a.timestamp)
@@ -151,7 +168,7 @@ async function checkToon(toon) {
     let analysisText = caption;
 
     if (!captionMatched) {
-      const ocrText = await extractTextFromImage(post.thumbnailUrl);
+      const ocrText = await extractTextFromImage(post.thumbnailUrl, worker);
       const ocrMatched = allWords.some((w) => ocrText.includes(w));
       if (!ocrMatched) continue;
       analysisText = ocrText;
@@ -163,7 +180,7 @@ async function checkToon(toon) {
       : extractEpisodeNumber(analysisText);
 
     if (captionMatched && ep === null) {
-      const ocrText = await extractTextFromImage(post.thumbnailUrl);
+      const ocrText = await extractTextFromImage(post.thumbnailUrl, worker);
       const ocrEp = extractEpisodeNumberFromOCR(ocrText);
       if (ocrEp !== null) {
         ep = ocrEp;
@@ -199,7 +216,24 @@ async function checkToon(toon) {
   const highestEp = collected.reduce((max, c) => c.ep !== null && c.ep > max ? c.ep : max, toon.last_episode || 0);
   const representativePost = lastPost || collected[0].post;
 
-  await supabase
+  // 기존 unread_posts + 이번에 발견한 것 병합 (읽은 화수 기준 필터)
+  const existingUnread = Array.isArray(toon.unread_posts) ? toon.unread_posts : [];
+  const newUnread = collected
+    .filter((c) => c.ep !== null)
+    .map((c) => ({ episode: c.ep, url: c.post.url }));
+  const mergedUnread = [...existingUnread];
+  for (const item of newUnread) {
+    if (!mergedUnread.find((u) => u.episode === item.episode)) {
+      mergedUnread.push(item);
+    }
+  }
+  // ep가 null인 항목(화수 불명)은 대표 포스트 URL로 fallback
+  if (mergedUnread.length === 0 && representativePost) {
+    mergedUnread.push({ episode: null, url: representativePost.url });
+  }
+  mergedUnread.sort((a, b) => (a.episode ?? 0) - (b.episode ?? 0));
+
+  const { error: updateError } = await supabase
     .from("toons")
     .update({
       has_new_episode: true,
@@ -208,17 +242,25 @@ async function checkToon(toon) {
       last_episode_title: representativePost.caption?.slice(0, 80) ?? "",
       last_thumbnail_url: representativePost.thumbnailUrl,
       last_post_url: representativePost.url,
+      unread_posts: mergedUnread,
       updated_at: new Date().toISOString(),
     })
     .eq("id", toon.id);
 
+  if (updateError) {
+    // Supabase 쓰기 실패 → 알림 보내지 않음 (다음 배치에서 중복 발송 방지)
+    console.error(`[${toon.username}] Supabase 업데이트 실패:`, updateError.message);
+    return { found: false };
+  }
+
   const episodes = collected.map((c) => c.ep).filter((e) => e !== null);
-  return { found: true, episode: highestEp || null, episodes, isComplete: anyComplete };
+  return { found: true, episode: highestEp || null, episodes, isComplete: anyComplete, unreadPosts: mergedUnread };
 }
 
 // ─── 메인 ────────────────────────────────────────────────────────
 async function main() {
   console.log("=== 인스타툰 배치 체크 시작 ===");
+  const worker = await createWorker("kor+eng");
 
   const { data: toons, error: toonsError } = await supabase
     .from("toons")
@@ -244,27 +286,25 @@ async function main() {
     `툰 ${toons.length}개, 디바이스 ${Object.keys(tokenByDevice).length}개`,
   );
 
+  // device_id → 새 에피소드 결과 누적
+  const resultsByDevice = {};
+
   for (const toon of toons) {
     if (toon.has_new_episode) {
       console.log(`[${toon.username}] 이미 새 편 있음 — 건너뜀`);
       continue;
     }
     try {
-      const result = await checkToon(toon);
+      const result = await checkToon(toon, worker);
       if (result?.found) {
-        const token = tokenByDevice[toon.device_id];
-        if (token) {
-          await sendPushNotification(
-            [token],
-            toon.series_name,
-            result.episodes?.length > 0 ? result.episodes : result.episode,
-            result.isComplete,
-          );
-        } else {
-          console.warn(
-            `[${toon.username}] device_id(${toon.device_id})에 해당하는 토큰 없음`,
-          );
-        }
+        if (!resultsByDevice[toon.device_id]) resultsByDevice[toon.device_id] = [];
+        resultsByDevice[toon.device_id].push({
+          toonId: toon.id,
+          seriesName: toon.series_name,
+          episodes: result.episodes ?? [],
+          isComplete: result.isComplete ?? false,
+          unreadPosts: result.unreadPosts ?? [],
+        });
       }
     } catch (err) {
       console.warn(`[${toon.username}] 확인 실패:`, err.message);
@@ -272,6 +312,17 @@ async function main() {
     await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1000));
   }
 
+  // 모든 툰 체크 완료 후 디바이스별 알림 한 번씩 전송
+  for (const [deviceId, results] of Object.entries(resultsByDevice)) {
+    const token = tokenByDevice[deviceId];
+    if (token) {
+      await sendPushNotification(token, results);
+    } else {
+      console.warn(`device_id(${deviceId})에 해당하는 토큰 없음`);
+    }
+  }
+
+  await worker.terminate();
   console.log("=== 완료 ===");
 }
 

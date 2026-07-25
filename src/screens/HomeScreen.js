@@ -8,14 +8,17 @@ import {
   RefreshControl,
   AppState,
   Animated,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
+import * as Notifications from "expo-notifications";
 import {
   getSortedToons,
   checkAllToons,
   syncFromSupabase,
   fillMissingUnreadPosts,
+  applyNotificationUpdates,
 } from "../services/toon-service";
 import ToonCard from "../components/ToonCard";
 import AddToonModal from "../components/AddToonModal";
@@ -35,6 +38,7 @@ function relativeTime(ts) {
 export default function HomeScreen() {
   const { theme, isDark, toggleTheme } = useTheme();
   const [toons, setToons] = useState([]);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingToon, setEditingToon] = useState(null);
@@ -45,6 +49,8 @@ export default function HomeScreen() {
   const toastTO = useRef(null);
   const spinAnim = useRef(new Animated.Value(0)).current;
   const spinLoop = useRef(null);
+  const syncingRef = useRef(false);
+  const lastProcessedNotifId = useRef(null);
 
   const showToast = useCallback((msg) => {
     clearTimeout(toastTO.current);
@@ -58,15 +64,51 @@ export default function HomeScreen() {
   }, []);
 
   const syncAndFill = useCallback(async () => {
-    await syncFromSupabase();
-    await fillMissingUnreadPosts();
-    await loadToons();
+    if (syncingRef.current) return;  // 동시 실행 방지
+    syncingRef.current = true;
+    try {
+      await syncFromSupabase();
+      await loadToons();              // 1차: 배지 즉시 표시
+      await fillMissingUnreadPosts();
+      await loadToons();              // 2차: 에피소드 링크 추가
+    } finally {
+      syncingRef.current = false;
+    }
   }, [loadToons]);
 
   useEffect(() => {
+    const handleNotification = async (notification) => {
+      // init()이 이미 처리한 알림이면 중복 실행 방지
+      const notifId = notification?.request?.identifier;
+      if (notifId && lastProcessedNotifId.current === notifId) return;
+      if (notifId) lastProcessedNotifId.current = notifId;
+
+      const updates = notification?.request?.content?.data?.updates;
+      if (updates) {
+        await applyNotificationUpdates(updates);
+        await loadToons();
+      }
+    };
+
     const init = async () => {
+      // 알림 payload → AsyncStorage 즉시 반영 (네트워크 없이 빠름)
+      const lastResponse = await Notifications.getLastNotificationResponseAsync();
+      if (lastResponse) {
+        const notifTime = lastResponse.notification?.date ?? 0;
+        const isFresh = Date.now() - notifTime * 1000 < 5 * 60 * 1000;
+        const updates = lastResponse.notification?.request?.content?.data?.updates;
+        if (isFresh && updates) {
+          // 처리한 알림 ID 기록 → notifResponse 리스너 중복 방지
+          lastProcessedNotifId.current = lastResponse.notification?.request?.identifier;
+          await applyNotificationUpdates(updates);
+        }
+      }
+
       await loadToons();
+
+      // Supabase 동기화 완료 후 스피너 해제
       await syncAndFill();
+      setInitialLoading(false);
     };
     init();
 
@@ -75,9 +117,18 @@ export default function HomeScreen() {
       if (state === "active") syncAndFill();
     });
 
+    const notifReceived = Notifications.addNotificationReceivedListener(
+      (n) => handleNotification(n),
+    );
+    const notifResponse = Notifications.addNotificationResponseReceivedListener(
+      (r) => handleNotification(r.notification),
+    );
+
     return () => {
       clearInterval(interval);
       appStateSub.remove();
+      notifReceived.remove();
+      notifResponse.remove();
       clearTimeout(toastTO.current);
     };
   }, []);
@@ -154,6 +205,15 @@ export default function HomeScreen() {
     });
 
   const s = styles(theme);
+
+  if (initialLoading) {
+    return (
+      <SafeAreaView style={[s.container, s.loadingContainer]}>
+        <Text style={s.title}>Toonify</Text>
+        <ActivityIndicator size="small" color={theme.accent} style={{ marginTop: 14 }} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={s.container}>
@@ -261,6 +321,7 @@ export default function HomeScreen() {
 const styles = (theme) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.bg },
+    loadingContainer: { justifyContent: "center", alignItems: "center" },
 
     // Header
     header: {

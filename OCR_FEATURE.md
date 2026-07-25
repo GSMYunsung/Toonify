@@ -39,13 +39,13 @@
 
 ## 3. 해결 방안 검토
 
-| 방법 | 설명 | 비용 | 난이도 |
-|------|------|------|--------|
-| **방법 1** OCR (ML Kit) | 온디바이스 텍스트 인식 | 무료 | 중 (네이티브 빌드 필요) |
-| **방법 2** OCR (OCR.space API) | 클라우드 REST API | 무료 플랜 있음 | 하 |
-| **방법 3** AI 이미지 분석 | Claude/GPT-4o에 이미지 전송 | API 호출마다 비용 | 하 |
-| **방법 4** 포스트 ID 비교 | 화수 포기, 새 포스트 여부만 감지 | 무료 | 하 |
-| **방법 5** 캡션 + OCR + ID 하이브리드 | 1→2→3 순서로 순차 시도 | 무료 | 중 |
+| 방법                                  | 설명                             | 비용              | 난이도                  |
+| ------------------------------------- | -------------------------------- | ----------------- | ----------------------- |
+| **방법 1** OCR (ML Kit)               | 온디바이스 텍스트 인식           | 무료              | 중 (네이티브 빌드 필요) |
+| **방법 2** OCR (OCR.space API)        | 클라우드 REST API                | 무료 플랜 있음    | 하                      |
+| **방법 3** AI 이미지 분석             | Claude/GPT-4o에 이미지 전송      | API 호출마다 비용 | 하                      |
+| **방법 4** 포스트 ID 비교             | 화수 포기, 새 포스트 여부만 감지 | 무료              | 하                      |
+| **방법 5** 캡션 + OCR + ID 하이브리드 | 1→2→3 순서로 순차 시도           | 무료              | 중                      |
 
 ### 선택: 방법 5 (하이브리드) + OCR.space
 
@@ -120,20 +120,22 @@ export async function extractTextFromImage(imageUrl) {
     url: imageUrl,
     language: "kor",
     isOverlayRequired: "false",
-    OCREngine: "2",          // Engine 2: 한국어 인식률 높음
+    OCREngine: "3",
   });
 
   const res = await fetch(`https://api.ocr.space/parse/imageurl?${params}`);
   const data = await res.json();
-  return data.ParsedResults?.[0]?.ParsedText || '';
+  return data.ParsedResults?.[0]?.ParsedText || "";
 }
 ```
 
 **ML Kit 대비 장점:**
+
 - 네이티브 빌드 불필요 → Expo Go에서 즉시 테스트 가능
 - 별도 패키지 설치 없음
 
 **주의:**
+
 - 클라우드 API이므로 인터넷 연결 필요
 - 무료 플랜: 월 25,000회 (개인 사용 수준에서는 충분)
 - `config.js`에 `OCR_SPACE_KEY` 설정 필요
@@ -171,11 +173,15 @@ OCR 결과는 노이즈가 많아 관대한 패턴이 필요하지만, 캡션에
 
 ```js
 // 최신 3개 포스트만 체크
-const posts = [...allPosts].sort((a, b) => b.timestamp - a.timestamp).slice(0, 3);
+const posts = [...allPosts]
+  .sort((a, b) => b.timestamp - a.timestamp)
+  .slice(0, 3);
 
 for (const post of posts) {
   // 캡션 키워드 매칭: 긴 단어 2개만 사용 (흔한 단어 오탐 방지)
-  const keyWords = [...allWords].sort((a, b) => b.length - a.length).slice(0, 2);
+  const keyWords = [...allWords]
+    .sort((a, b) => b.length - a.length)
+    .slice(0, 2);
   const captionMatched = keyWords.some((w) => caption.includes(w));
 
   // 캡션 미매칭 → OCR로 전체 단어 매칭 (더 관대)
@@ -187,7 +193,9 @@ for (const post of posts) {
   }
 
   // 화수 추출 (캡션이면 엄격, OCR이면 관대)
-  let ep = isOCR ? extractEpisodeNumberFromOCR(analysisText) : extractEpisodeNumber(analysisText);
+  let ep = isOCR
+    ? extractEpisodeNumberFromOCR(analysisText)
+    : extractEpisodeNumber(analysisText);
 
   // 캡션에 키워드는 있는데 화수 없을 때 → OCR 폴백
   if (captionMatched && ep === null) {
@@ -243,10 +251,10 @@ npx expo start
 
 ## 9. 감지 시나리오별 동작 정리
 
-| 시나리오 | 캡션 | 이미지 | 결과 |
-|----------|------|--------|------|
-| 텍스트에 화수 있음 | "47화 업로드!" | - | 1단계 캡션에서 바로 감지 ✅ |
-| 이미지에만 화수 있음 | "업로드!" | "47화" 그림 | 2단계 OCR로 감지 ✅ |
-| 화수 표기 없음 | "안녕하세요" | 그림만 | 3단계 포스트 ID로 감지 ✅ |
-| 완결 표기 | "완결입니다" | "완" 그림 | 완결 감지 → 가상 화수 부여 ✅ |
-| 완전히 동일한 포스트 | (동일) | (동일) | 알림 없음 (정상) ✅ |
+| 시나리오             | 캡션           | 이미지      | 결과                          |
+| -------------------- | -------------- | ----------- | ----------------------------- |
+| 텍스트에 화수 있음   | "47화 업로드!" | -           | 1단계 캡션에서 바로 감지 ✅   |
+| 이미지에만 화수 있음 | "업로드!"      | "47화" 그림 | 2단계 OCR로 감지 ✅           |
+| 화수 표기 없음       | "안녕하세요"   | 그림만      | 3단계 포스트 ID로 감지 ✅     |
+| 완결 표기            | "완결입니다"   | "완" 그림   | 완결 감지 → 가상 화수 부여 ✅ |
+| 완전히 동일한 포스트 | (동일)         | (동일)      | 알림 없음 (정상) ✅           |

@@ -1,4 +1,7 @@
 export function extractEpisodeNumber(text) {
+  // 원문자 ①-⑳ → 일반 숫자로 변환 (예: ② → 2)
+  text = text.replace(/[①-⑳]/g, (c) => String(c.charCodeAt(0) - 9311));
+
   const patterns = [
     /(\d+)\s*화/,
     /(\d+)\s*완/,   // "10완", "10완결"
@@ -21,8 +24,11 @@ export function extractSeriesName(text) {
 }
 
 export function isCompleteEpisode(text) {
-  // /완결?/ 는 "완" 단독 매칭 버그 있음 → 완결 명시적으로만 감지
-  return /완결/.test(text) || /[\[\(「]완[\]\)」]/.test(text);
+  return /완결/.test(text)
+    || /최종화/.test(text)
+    || /마지막\s*화/.test(text)
+    || /(?:^|[\s(\[「（【])완(?:$|[\s)\]」）】.,!?])/.test(text)  // 완 전후 공백·괄호·구두점
+    || /[(\[「（【〔][가-힣]+[)\]」）】〕]/.test(text);            // (완), （완）, 【최종화】 등
 }
 
 // OCR 텍스트 전용 — 캡션에는 오탐 위험이 있어 사용하지 않음

@@ -60,14 +60,8 @@ export default function HomeScreen() {
     setToons(sorted);
   }, []);
 
-  const syncAndFill = useCallback(async () => {
-    await syncFromSupabase();
-    await loadToons();
-  }, [loadToons]);
-
   useEffect(() => {
     const handleNotification = async (notification) => {
-      // init()이 이미 처리한 알림이면 중복 실행 방지
       const notifId = notification?.request?.identifier;
       if (notifId && lastProcessedNotifId.current === notifId) return;
       if (notifId) lastProcessedNotifId.current = notifId;
@@ -80,7 +74,7 @@ export default function HomeScreen() {
     };
 
     const init = async () => {
-      let fromNotif = false;
+      // 앱 실행 시 알림 payload가 있으면 로컬에 바로 반영 — 네트워크 없음
       const lastResponse = await Notifications.getLastNotificationResponseAsync();
       if (lastResponse) {
         const notifTime = lastResponse.notification?.date ?? 0;
@@ -89,14 +83,9 @@ export default function HomeScreen() {
         if (isFresh && updates) {
           lastProcessedNotifId.current = lastResponse.notification?.request?.identifier;
           await applyNotificationUpdates(updates);
-          fromNotif = true;
         }
       }
-
       await loadToons();
-
-      // 알림 탭 진입이면 payload에 이미 최신 데이터가 있으므로 Supabase 동기화 생략
-      if (!fromNotif) await syncAndFill();
       setInitialLoading(false);
     };
     init();
@@ -142,6 +131,7 @@ export default function HomeScreen() {
     setRefreshing(true);
     try {
       setIsSyncing(true);
+      await syncFromSupabase();
       await checkAllToons(setStatusText, { forceAll: true });
       await loadToons();
       setLastSyncedAt(Date.now());

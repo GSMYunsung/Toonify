@@ -170,7 +170,10 @@ async function checkToon(toon, worker) {
     if (!captionMatched) {
       const ocrText = await extractTextFromImage(post.thumbnailUrl, worker);
       const ocrMatched = allWords.some((w) => ocrText.includes(w));
-      if (!ocrMatched) continue;
+      if (!ocrMatched) {
+        console.log(`[${toon.username}] 스킵 — 캡션/OCR 키워드 없음 | caption: "${(post.caption || "").slice(0, 40)}" | ocr: "${ocrText.slice(0, 40)}"`);
+        continue;
+      }
       analysisText = ocrText;
     }
 

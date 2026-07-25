@@ -13,7 +13,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import { addToon, updateToonInfo, checkToon } from "../services/toon-service";
+import { addToon, updateToonInfo } from "../services/toon-service";
 import * as Clipboard from "expo-clipboard";
 import { fetchPostByUrl } from "../services/instagram-api";
 import { extractTextFromImage } from "../services/ocr-service";
@@ -116,14 +116,12 @@ export default function AddToonModal({ visible, onClose, onAdded, onUpdate, edit
     } else {
       const ep = parseInt(lastEpisode) || 0;
       const initialHistory = (ep > 0 && linkUrl) ? [{ episode: ep, url: linkUrl.trim() }] : [];
-      const newToon = await addToon({
+      await addToon({
         username: clean,
         seriesName: seriesName.trim(),
         lastEpisode: ep,
         episodeHistory: initialHistory,
       });
-      // background episode check — only refresh list, no toast
-      checkToon(newToon).then(() => onUpdate?.()).catch(() => {});
       onAdded();
     }
     onClose();

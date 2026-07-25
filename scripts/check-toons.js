@@ -146,7 +146,7 @@ async function checkToon(toon) {
   const allPosts = await fetchLatestPosts(toon.username);
   const posts = [...allPosts]
     .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, 5);
+    .slice(0, 6);
 
   if (!toon.last_post_id && posts.length > 0) {
     await supabase

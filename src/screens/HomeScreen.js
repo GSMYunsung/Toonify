@@ -159,8 +159,9 @@ export default function HomeScreen() {
   });
 
   const autoCheck = async () => {
-    // init() 완료 전에는 실행 금지 — 레이스 컨디션으로 중복 알림 방지
-    if (!initDoneRef.current) return;
+    // init() 완료 전이거나 syncAndFill 진행 중이면 스킵
+    // — 앱 재진입 직후 타이머 발동 시 hasNewEpisode 갱신 전에 checkToon이 돌아 중복 알림 발생 방지
+    if (!initDoneRef.current || syncingRef.current) return;
     try {
       setIsSyncing(true);
       await syncFromSupabase();  // 최신 has_new_episode 반영 후 체크

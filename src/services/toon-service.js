@@ -208,27 +208,12 @@ export async function getSortedToons() {
   });
 }
 
-export async function checkToon(toonInput, ocrLimitRef = null) {
+export async function checkToon(toonInput) {
   // 항상 최신 저장 데이터로 비교 (stale props 방지)
   const stored = await getToons();
   const toon = stored.find((t) => t.id === toonInput.id) ?? toonInput;
 
-  // OCR 래퍼: null 반환(한도 초과) 시 카운터 증가, 2회 이상이면 전체 플로우 중단
-  const ocr = async (imageUrl) => {
-    const result = await extractTextFromImage(imageUrl);
-    if (result === null) {
-      if (ocrLimitRef) {
-        ocrLimitRef.count++;
-        if (ocrLimitRef.count >= 2) {
-          const err = new Error('OCR 한도 초과로 새로고침 중단');
-          err.code = 'OCR_LIMIT';
-          throw err;
-        }
-      }
-      return ""; // 단건 수동 체크는 그냥 빈 문자열로 처리
-    }
-    return result;
-  };
+  const ocr = (imageUrl) => extractTextFromImage(imageUrl);
 
   const allPosts = await fetchLatestPosts(toon.username);
   const allPostsOldestFirst = [...allPosts].sort((a, b) => a.timestamp - b.timestamp);
@@ -437,7 +422,6 @@ export async function fillMissingUnreadPosts() {
 export async function checkAllToons(onProgress, { forceAll = false } = {}) {
   const toons = await getToons();
   let updated = false;
-  const ocrLimitRef = { count: 0 };
 
   for (const toon of toons) {
     // 완결 툰은 항상 제외. undetectable은 자동확인 시만 제외(수동 새로고침이면 재시도)
@@ -445,14 +429,10 @@ export async function checkAllToons(onProgress, { forceAll = false } = {}) {
     if (toon.undetectable && !forceAll) continue;
     try {
       onProgress?.(`@${toon.username} 확인 중...`);
-      const result = await checkToon(toon, ocrLimitRef);
+      const result = await checkToon(toon);
       if (result.found) updated = true;
       await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1000));
     } catch (err) {
-      if (err.code === 'OCR_LIMIT') {
-        console.warn('[checkAllToons] OCR 한도 초과 2회 → 새로고침 중단');
-        break;
-      }
       console.warn(`@${toon.username} 확인 실패:`, err.message);
     }
   }

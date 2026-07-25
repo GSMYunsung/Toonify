@@ -48,6 +48,14 @@ module.exports = {
           color: "#A594F9",
         },
       ],
+      [
+        "expo-build-properties",
+        {
+          ios: {
+            deploymentTarget: "15.5",
+          },
+        },
+      ],
     ],
     extra: {
       eas: {

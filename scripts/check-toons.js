@@ -233,7 +233,10 @@ async function checkToon(toon, worker) {
   }
   mergedUnread.sort((a, b) => (a.episode ?? 0) - (b.episode ?? 0));
 
-  const { error: updateError } = await supabase
+  console.log(`[${toon.username}] unread_posts 저장 시도:`, JSON.stringify(mergedUnread));
+  console.log(`[${toon.username}] toon.id:`, toon.id);
+
+  const { data: updateData, error: updateError } = await supabase
     .from("toons")
     .update({
       has_new_episode: true,
@@ -245,11 +248,18 @@ async function checkToon(toon, worker) {
       unread_posts: mergedUnread,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", toon.id);
+    .eq("id", toon.id)
+    .select();
+
+  console.log(`[${toon.username}] Supabase 업데이트 결과: rows=${updateData?.length ?? 0}, error=${updateError?.message ?? "없음"}`);
 
   if (updateError) {
-    // Supabase 쓰기 실패 → 알림 보내지 않음 (다음 배치에서 중복 발송 방지)
     console.error(`[${toon.username}] Supabase 업데이트 실패:`, updateError.message);
+    return { found: false };
+  }
+
+  if (!updateData || updateData.length === 0) {
+    console.error(`[${toon.username}] 업데이트된 행 없음 — id 불일치 가능성`);
     return { found: false };
   }
 

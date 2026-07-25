@@ -80,23 +80,23 @@ export default function HomeScreen() {
     };
 
     const init = async () => {
-      // 알림 payload → AsyncStorage 즉시 반영 (네트워크 없이 빠름)
+      let fromNotif = false;
       const lastResponse = await Notifications.getLastNotificationResponseAsync();
       if (lastResponse) {
         const notifTime = lastResponse.notification?.date ?? 0;
         const isFresh = Date.now() - notifTime * 1000 < 5 * 60 * 1000;
         const updates = lastResponse.notification?.request?.content?.data?.updates;
         if (isFresh && updates) {
-          // 처리한 알림 ID 기록 → notifResponse 리스너 중복 방지
           lastProcessedNotifId.current = lastResponse.notification?.request?.identifier;
           await applyNotificationUpdates(updates);
+          fromNotif = true;
         }
       }
 
       await loadToons();
 
-      // Supabase 동기화 완료 후 스피너 해제
-      await syncAndFill();
+      // 알림 탭 진입이면 payload에 이미 최신 데이터가 있으므로 Supabase 동기화 생략
+      if (!fromNotif) await syncAndFill();
       setInitialLoading(false);
     };
     init();

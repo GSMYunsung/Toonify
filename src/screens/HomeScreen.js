@@ -17,7 +17,6 @@ import {
   getSortedToons,
   checkAllToons,
   syncFromSupabase,
-  fillMissingUnreadPosts,
   applyNotificationUpdates,
 } from "../services/toon-service";
 import ToonCard from "../components/ToonCard";
@@ -68,9 +67,7 @@ export default function HomeScreen() {
     syncingRef.current = true;
     try {
       await syncFromSupabase();
-      await loadToons();              // 1차: 배지 즉시 표시
-      await fillMissingUnreadPosts();
-      await loadToons();              // 2차: 에피소드 링크 추가
+      await loadToons();
     } finally {
       syncingRef.current = false;
     }

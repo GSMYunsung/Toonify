@@ -6,7 +6,6 @@ import {
   SectionList,
   TouchableOpacity,
   RefreshControl,
-  AppState,
   Animated,
   ActivityIndicator,
 } from "react-native";
@@ -48,7 +47,6 @@ export default function HomeScreen() {
   const toastTO = useRef(null);
   const spinAnim = useRef(new Animated.Value(0)).current;
   const spinLoop = useRef(null);
-  const syncingRef = useRef(false);
   const lastProcessedNotifId = useRef(null);
 
   const showToast = useCallback((msg) => {
@@ -63,14 +61,8 @@ export default function HomeScreen() {
   }, []);
 
   const syncAndFill = useCallback(async () => {
-    if (syncingRef.current) return;  // 동시 실행 방지
-    syncingRef.current = true;
-    try {
-      await syncFromSupabase();
-      await loadToons();
-    } finally {
-      syncingRef.current = false;
-    }
+    await syncFromSupabase();
+    await loadToons();
   }, [loadToons]);
 
   useEffect(() => {
@@ -109,10 +101,6 @@ export default function HomeScreen() {
     };
     init();
 
-    const appStateSub = AppState.addEventListener("change", (state) => {
-      if (state === "active") syncAndFill();
-    });
-
     const notifReceived = Notifications.addNotificationReceivedListener(
       (n) => handleNotification(n),
     );
@@ -121,7 +109,6 @@ export default function HomeScreen() {
     );
 
     return () => {
-      appStateSub.remove();
       notifReceived.remove();
       notifResponse.remove();
       clearTimeout(toastTO.current);

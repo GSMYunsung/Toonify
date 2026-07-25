@@ -242,7 +242,9 @@ export async function checkToon(toonInput) {
     const minMatch = Math.min(2, keyWords.length);
     const matchThreshold = Math.min(3, keyWords.length);
     const matchCount = keyWords.filter((w) => captionTokens.has(w)).length;
-    const captionMatched = matchCount >= minMatch;
+    // 완결 표시가 캡션에 있으면 시리즈명 키워드 없어도 통과
+    const captionIsComplete = isCompleteEpisode(caption);
+    const captionMatched = captionIsComplete || matchCount >= minMatch;
     const strongMatch = matchCount >= matchThreshold;
 
     let analysisText = caption;
@@ -250,7 +252,7 @@ export async function checkToon(toonInput) {
     if (!captionMatched && !toon.isComplete) {
       console.log(`[checkToon] 캡션에 키워드 부족(${matchCount}/${minMatch}) → OCR 시도`);
       const ocrText = await ocr(post.thumbnailUrl);
-      const ocrMatched = allWords.some((w) => ocrText.includes(w));
+      const ocrMatched = allWords.some((w) => ocrText.includes(w)) || isCompleteEpisode(ocrText);
       if (!ocrMatched) {
         console.log(`[checkToon] OCR에도 키워드 없음 → 건너뜀`);
         continue;

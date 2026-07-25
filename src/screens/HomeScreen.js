@@ -51,6 +51,7 @@ export default function HomeScreen() {
   const spinLoop = useRef(null);
   const syncingRef = useRef(false);
   const lastProcessedNotifId = useRef(null);
+  const initDoneRef = useRef(false);
 
   const showToast = useCallback((msg) => {
     clearTimeout(toastTO.current);
@@ -109,6 +110,7 @@ export default function HomeScreen() {
       // Supabase 동기화 완료 후 스피너 해제
       await syncAndFill();
       setInitialLoading(false);
+      initDoneRef.current = true;  // autoCheck가 이제부터 실행 가능
     };
     init();
 
@@ -157,8 +159,11 @@ export default function HomeScreen() {
   });
 
   const autoCheck = async () => {
+    // init() 완료 전에는 실행 금지 — 레이스 컨디션으로 중복 알림 방지
+    if (!initDoneRef.current) return;
     try {
       setIsSyncing(true);
+      await syncFromSupabase();  // 최신 has_new_episode 반영 후 체크
       await checkAllToons(setStatusText);
       await loadToons();
       setLastSyncedAt(Date.now());

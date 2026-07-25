@@ -146,7 +146,7 @@ async function checkToon(toon) {
   const allPosts = await fetchLatestPosts(toon.username);
   const posts = [...allPosts]
     .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, 3);
+    .slice(0, 5);
 
   if (!toon.last_post_id && posts.length > 0) {
     await supabase
@@ -171,13 +171,15 @@ async function checkToon(toon) {
     const keyWords = [...allWords]
       .sort((a, b) => b.length - a.length)
       .slice(0, 2);
-    const captionMatched = keyWords.some((w) => caption.includes(w));
+    // 완결 표시가 캡션에 있으면 시리즈명 키워드 체크 없이 통과
+    const captionIsComplete = isCompleteEpisode(caption);
+    const captionMatched = captionIsComplete || keyWords.some((w) => caption.includes(w));
 
     let analysisText = caption;
 
     if (!captionMatched) {
       const ocrText = await extractTextFromImage(post.thumbnailUrl);
-      const ocrMatched = allWords.some((w) => ocrText.includes(w));
+      const ocrMatched = allWords.some((w) => ocrText.includes(w)) || isCompleteEpisode(ocrText);
       if (!ocrMatched) {
         console.log(`[${toon.username}] 스킵 — 캡션/OCR 키워드 없음 | caption: "${(post.caption || "").slice(0, 40)}" | ocr: "${ocrText.slice(0, 40)}"`);
         continue;

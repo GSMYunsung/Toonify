@@ -340,6 +340,17 @@ export async function checkToon(toonInput) {
     });
 
     if (!toon.hasNewEpisode) {
+      // Supabase 업데이트 — 서버가 다음 실행 때 has_new_episode=true 보고 스킵
+      supabase.from('toons').update({
+        has_new_episode: true,
+        last_episode: maxEp,
+        last_post_url: lastEntry.post.url,
+        unread_posts: unreadPosts.map((p) => ({ episode: p.episode, url: p.url })),
+        updated_at: new Date().toISOString(),
+      }).eq('id', toon.id).then(({ error }) => {
+        if (error) console.warn('[checkToon] Supabase 업데이트 실패:', error.message);
+      });
+
       await sendLocalNotification(
         toon.seriesName,
         collected.map((e) => e.ep),

@@ -291,6 +291,14 @@ async function main() {
 
   for (const toon of toons) {
     if (toon.has_new_episode) {
+      // unread_posts가 비어있으면 기존 데이터로 채우기 (컬럼 신규 추가 시 일회성 보정)
+      const hasUnread = Array.isArray(toon.unread_posts) && toon.unread_posts.length > 0;
+      if (!hasUnread && toon.last_post_url) {
+        const ep = (toon.last_episode || 0) > (toon.read_episode || 0) ? toon.last_episode : null;
+        const fallback = [{ episode: ep, url: toon.last_post_url }];
+        await supabase.from("toons").update({ unread_posts: fallback }).eq("id", toon.id);
+        console.log(`[${toon.username}] unread_posts 보정:`, fallback);
+      }
       console.log(`[${toon.username}] 이미 새 편 있음 — 건너뜀`);
       continue;
     }

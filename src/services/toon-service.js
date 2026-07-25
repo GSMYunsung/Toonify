@@ -146,12 +146,21 @@ export function buildUnreadPosts(toon, allPosts) {
   const allWords = toon.seriesName.split(/\s+/).filter((w) => w.length >= 2);
   const seen = new Set();
   const result = [];
+  let maxFoundEp = toon.lastEpisode || 0;
 
-  for (const post of allPosts) {
+  // 오래된 순 처리 — 완결 합성 화수가 실제 화수와 충돌하지 않도록
+  const sorted = [...allPosts].sort((a, b) => a.timestamp - b.timestamp);
+
+  for (const post of sorted) {
     const cap = post.caption || '';
-    const matched = allWords.some((w) => cap.includes(w));
+    const captionIsComplete = isCompleteEpisode(cap);
+    const matched = captionIsComplete || allWords.some((w) => cap.includes(w));
     if (!matched) continue;
-    const ep = extractEpisodeNumber(cap);
+
+    let ep = extractEpisodeNumber(cap);
+    if (ep === null && captionIsComplete) ep = maxFoundEp + 1;
+    if (ep !== null && ep > maxFoundEp) maxFoundEp = ep;
+
     if (ep !== null && ep > readEp && !seen.has(ep)) {
       seen.add(ep);
       result.push({ episode: ep, url: post.url });
@@ -403,7 +412,7 @@ export async function syncFromSupabase() {
     const deviceId = await getDeviceId();
     const { data: remoteToons } = await supabase
       .from('toons')
-      .select('id, has_new_episode, last_episode, last_post_url, unread_posts')
+      .select('id, has_new_episode, last_episode, last_post_url, unread_posts, updated_at')
       .eq('device_id', deviceId);
 
     if (!remoteToons?.length) return;
@@ -414,7 +423,14 @@ export async function syncFromSupabase() {
     for (const remote of remoteToons) {
       const local = toons.find((t) => t.id === remote.id);
       if (!local) continue;
-      if (remote.has_new_episode) {
+
+      // 서버 데이터가 로컬보다 최신일 때만 적용
+      // — advanceEpisode 직후 Supabase가 아직 갱신 전이면 로컬 변경을 지키기 위함
+      const remoteTime = remote.updated_at ? new Date(remote.updated_at).getTime() : 0;
+      const localTime = local.updatedAt ? new Date(local.updatedAt).getTime() : 0;
+      const remoteIsNewer = remoteTime > localTime;
+
+      if (remote.has_new_episode && remoteIsNewer) {
         if (!local.hasNewEpisode) {
           local.hasNewEpisode = true;
           changed = true;

@@ -144,9 +144,11 @@ async function sendPushNotification(token, results) {
 // ─── 툰 하나 확인 ────────────────────────────────────────────────
 async function checkToon(toon) {
   const allPosts = await fetchLatestPosts(toon.username);
+  // 최신 6개를 추린 뒤 오래된 순으로 처리 — 완결 합성 화수가 실제 화수와 충돌 방지
   const posts = [...allPosts]
     .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, 6);
+    .slice(0, 6)
+    .sort((a, b) => a.timestamp - b.timestamp);
 
   if (!toon.last_post_id && posts.length > 0) {
     await supabase

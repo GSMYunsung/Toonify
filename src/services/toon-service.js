@@ -174,6 +174,16 @@ export async function advanceEpisode(id, episode, remainingPosts) {
   const toons = await getToons();
   const t = toons.find((t) => t.id === id);
   if (!t) return;
+
+  // 방금 읽은 화수(episode 이하)를 unreadPosts에서 episodeHistory로 이동
+  const nowRead = (t.unreadPosts || []).filter((p) => p.episode !== null && p.episode <= episode);
+  const historyMap = {};
+  for (const h of (t.episodeHistory || [])) historyMap[h.episode] = h;
+  for (const ep of nowRead) {
+    if (!(ep.episode in historyMap)) historyMap[ep.episode] = { episode: ep.episode, url: ep.url };
+  }
+  t.episodeHistory = Object.values(historyMap).sort((a, b) => (a.episode ?? 0) - (b.episode ?? 0));
+
   t.readEpisode = episode;
   t.unreadPosts = remainingPosts;
   t.hasNewEpisode = remainingPosts.length > 0;
@@ -397,11 +407,12 @@ export async function applyNotificationUpdates(updates) {
   if (!Array.isArray(updates) || updates.length === 0) return;
   const toons = await getToons();
   let changed = false;
-  for (const { toonId, unreadPosts } of updates) {
+  for (const { toonId, unreadPosts, isComplete } of updates) {
     const t = toons.find((t) => t.id === toonId);
     if (!t || !Array.isArray(unreadPosts) || unreadPosts.length === 0) continue;
     t.hasNewEpisode = true;
     t.unreadPosts = unreadPosts;
+    if (isComplete) t.isComplete = true;
     changed = true;
   }
   if (changed) await save(toons);
@@ -412,7 +423,7 @@ export async function syncFromSupabase() {
     const deviceId = await getDeviceId();
     const { data: remoteToons } = await supabase
       .from('toons')
-      .select('id, has_new_episode, last_episode, last_post_url, unread_posts, updated_at')
+      .select('id, has_new_episode, last_episode, last_post_url, unread_posts, is_complete, updated_at')
       .eq('device_id', deviceId);
 
     if (!remoteToons?.length) return;
@@ -448,6 +459,11 @@ export async function syncFromSupabase() {
           local.unreadPosts = remote.unread_posts;
           changed = true;
         }
+      }
+      // 완결 여부 — 한 번 완결이면 영구 적용
+      if (remote.is_complete && !local.isComplete) {
+        local.isComplete = true;
+        changed = true;
       }
     }
 

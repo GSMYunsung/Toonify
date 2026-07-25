@@ -190,14 +190,16 @@ export default function ToonCard({ toon, onUpdate, onEdit, onMessage }) {
         enabled={!isChecking}
       >
         {/* 카드 컨테이너 — 헤더 + 에피소드 목록 */}
-        <TouchableOpacity
-          activeOpacity={0.88}
-          onPress={toggleExpand}
-          onLongPress={() => onEdit?.(toon)}
+        <View
           style={[st.cardContainer, { backgroundColor: cardBg }, isNew && { borderWidth: 1.5, borderColor: theme.accent }]}
         >
-          {/* 헤더 행 */}
-          <View style={st.header}>
+          {/* 헤더 행 — 탭하면 펼치기/접기 */}
+          <TouchableOpacity
+            activeOpacity={0.88}
+            onPress={toggleExpand}
+            onLongPress={() => onEdit?.(toon)}
+            style={st.header}
+          >
             <View style={st.iconWrap}>
               <CardShape id={toon.id} />
             </View>
@@ -245,7 +247,7 @@ export default function ToonCard({ toon, onUpdate, onEdit, onMessage }) {
                 </Animated.View>
               </View>
             </View>
-          </View>
+          </TouchableOpacity>
 
           {/* 에피소드 목록 (expanded) */}
           {expanded && (
@@ -287,7 +289,7 @@ export default function ToonCard({ toon, onUpdate, onEdit, onMessage }) {
               )}
             </View>
           )}
-        </TouchableOpacity>
+        </View>
       </Swipeable>
     </View>
   );

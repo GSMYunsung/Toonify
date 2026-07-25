@@ -96,6 +96,7 @@ async function sendPushNotification(token, results) {
   const updates = results.map((r) => ({
     toonId: r.toonId,
     unreadPosts: r.unreadPosts,
+    isComplete: r.isComplete ?? false,
   }));
 
   let title, body;

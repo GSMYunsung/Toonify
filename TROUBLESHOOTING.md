@@ -190,3 +190,228 @@ android: {
 4. `google-services.json`은 앱 식별자만 포함하므로 git 커밋 가능 (보안은 Firebase Security Rules 담당)
 
 ---
+
+## #4 — 알림 탭 후 앱 진입 시 툰 체크가 다시 돌아가는 문제
+
+**날짜:** 2026-07-08
+
+**증상:**
+
+푸시 알림을 탭해서 앱에 들어오면, 방금 GitHub Actions가 체크를 돌린 직후인데도 앱이 또 다시 Instagram API를 호출함. 서버 부하 + 데이터 충돌 우려.
+
+**원인 추적 과정 (3단계):**
+
+처음엔 `AppState` 리스너가 포그라운드 복귀 시 `syncAndFill()`을 호출해서라고 생각했음. 제거했지만 여전히 발생.
+
+그 다음엔 `init()` 자체에서 `syncFromSupabase()` → `fillMissingUnreadPosts()` → Instagram API 호출 체인이 있었음. `init()`에서 네트워크 호출 전부 제거.
+
+그래도 계속 발생. `checkToon`에 `console.trace()`를 심어서 콜 스택을 직접 출력함:
+
+```
+[checkToon] 호출 스택
+  at checkToon (toon-service.js)
+  at AddToonModal.handleSave (AddToonModal.js)   ← 범인
+```
+
+**실제 원인:**
+
+`AddToonModal.handleSave`에서 툰 저장 후 백그라운드로 `checkToon`을 실행하는 코드가 있었음.
+
+```js
+// 문제 코드 (AddToonModal.js)
+const newToon = await addToon({ ... });
+checkToon(newToon).then(() => onUpdate?.()).catch(() => {});  // ← 이게 범인
+onAdded();
+```
+
+알림을 탭해서 앱에 들어왔을 때 마지막으로 등록된 툰의 `checkToon`이 타이밍상 겹쳐서 실행되던 것.
+
+**해결 방법:**
+
+`AddToonModal.handleSave`에서 `checkToon` 호출 제거. 툰 추가 직후 자동 체크 없앰. 체크는 수동 새로고침(당겨서 갱신)에서만.
+
+```js
+// 수정 후
+await addToon({ ... });
+onAdded();
+```
+
+**교훈:**
+
+"어디서 호출하는지 모르겠다" 싶으면 `console.trace()` 먼저. 추측보다 스택 트레이스가 빠름.
+
+---
+
+## #5 — 카드 탭 시 카드가 사라지는 버그 (Swipeable + 중첩 TouchableOpacity 충돌)
+
+**날짜:** 2026-07-08
+
+**증상:**
+
+리스트에서 툰 카드를 탭하면 카드가 사라짐. 특히 에피소드 행을 탭했을 때 카드 자체가 접히면서 섹션까지 이동해버려 "삭제된 것처럼" 보임.
+
+**원인:**
+
+카드 전체가 `TouchableOpacity` (onPress = toggleExpand) 안에 있었고, 에피소드 행도 `TouchableOpacity` (onPress = handleEpisodeTap)로 그 안에 중첩되어 있었음.
+
+```jsx
+// 문제 구조
+<TouchableOpacity onPress={toggleExpand}>        {/* 카드 전체 */}
+  <View style={st.header}> ... </View>
+  {expanded && (
+    <View>
+      <TouchableOpacity onPress={handleEpisodeTap}>  {/* 에피소드 행 */}
+      ...
+    </View>
+  )}
+</TouchableOpacity>
+```
+
+React Native에서 일반적으로는 내부 TouchableOpacity가 이벤트를 흡수해야 하지만, `react-native-gesture-handler`의 `Swipeable` 안에서는 제스처 시스템이 달라서 두 핸들러가 모두 발동됨.
+
+결과: 에피소드 탭 → `handleEpisodeTap` (에피소드 열기 + 읽음 처리) + `toggleExpand` (카드 접힘) 동시 발동 → 카드가 접히고 + 섹션 이동 → 사라진 것처럼 보임.
+
+**해결 방법:**
+
+카드 전체를 감싸는 `TouchableOpacity`를 `View`로 교체하고, `TouchableOpacity`는 헤더 행에만 적용.
+
+```jsx
+// 수정 후
+<View style={st.cardContainer}>                  {/* 카드 전체는 View */}
+  <TouchableOpacity onPress={toggleExpand}>      {/* 헤더만 TouchableOpacity */}
+    <View style={st.header}> ... </View>
+  </TouchableOpacity>
+  {expanded && (
+    <View>
+      <TouchableOpacity onPress={handleEpisodeTap}>  {/* 에피소드 행 — 이제 충돌 없음 */}
+      ...
+    </View>
+  )}
+</View>
+```
+
+에피소드 목록이 toggleExpand의 터치 영역 바깥에 있으므로 두 핸들러가 동시에 발동할 일이 없음.
+
+---
+
+## #6 — 에피소드 탭 시 해당 화수가 목록에서 사라지는 버그
+
+**날짜:** 2026-07-08
+
+**증상:**
+
+에피소드 목록에서 3화를 탭하면 3화가 사라짐. 4화를 탭하면 4화도 사라짐. 단, 툰 등록 시 입력한 기준 화수는 사라지지 않음.
+
+**원인:**
+
+`allEpisodes()`는 `episodeHistory`와 `unreadPosts`를 합산해서 보여줌.
+
+```
+episodeHistory: [5화]          ← 등록 시 입력한 기준 화수
+unreadPosts:    [6화, 7화, 8화] ← 서버가 감지한 새 에피소드
+```
+
+에피소드를 탭하면 `handleEpisodeTap` → `advanceEpisode`가 호출됨.
+
+```js
+// advanceEpisode 내부 (수정 전)
+t.readEpisode = episode;
+t.unreadPosts = remainingPosts;  // 탭한 화수보다 큰 것만 남김 → 탭한 화수는 삭제
+```
+
+7화를 탭하면:
+- `remainingPosts = unreadPosts.filter(p => p.episode > 7)` = [8화]
+- `unreadPosts`가 [8화]로 교체됨 → 6화·7화 소멸
+- `episodeHistory`는 여전히 [5화]만
+- `allEpisodes()` 결과: [5화, 8화] → **6화·7화가 증발**
+
+기준 화수(5화)만 안 사라지는 이유: `episodeHistory`에 저장되어 있어서.
+
+**해결 방법:**
+
+`advanceEpisode`에서 읽은 화수들을 `unreadPosts`에서 제거하는 게 아니라 `episodeHistory`로 이동.
+
+```js
+// 수정 후
+const nowRead = (t.unreadPosts || []).filter((p) => p.episode !== null && p.episode <= episode);
+const historyMap = {};
+for (const h of (t.episodeHistory || [])) historyMap[h.episode] = h;
+for (const ep of nowRead) {
+  if (!(ep.episode in historyMap)) historyMap[ep.episode] = { episode: ep.episode, url: ep.url };
+}
+t.episodeHistory = Object.values(historyMap).sort((a, b) => (a.episode ?? 0) - (b.episode ?? 0));
+
+t.readEpisode = episode;
+t.unreadPosts = remainingPosts;
+```
+
+이제 7화를 탭하면:
+- 6화·7화 → `episodeHistory`로 이동 (회색 "읽음" 표시)
+- 8화 → `unreadPosts`에 남음 (오렌지 "안읽음" 표시)
+- `allEpisodes()` 결과: [5화, 6화, 7화, 8화] 전부 표시됨
+
+---
+
+## #7 — 완결 알림은 오는데 카드에는 완결 배지가 안 뜨는 문제
+
+**날짜:** 2026-07-08
+
+**증상:**
+
+GitHub Actions가 완결 화수를 감지해서 "OO이 완결됐어요!" 알림은 정상 수신. 그런데 앱 카드에는 "완결" 배지가 뜨지 않고 "새 에피소드"로만 표시됨.
+
+**원인:**
+
+서버(`check-toons.js`)가 푸시 알림 payload를 만들 때 `isComplete`를 포함하지 않았음.
+
+```js
+// 문제 코드 (check-toons.js)
+const updates = results.map((r) => ({
+  toonId: r.toonId,
+  unreadPosts: r.unreadPosts,
+  // isComplete 없음!
+}));
+```
+
+그리고 클라이언트(`applyNotificationUpdates`)도 `isComplete`를 읽지 않았음.
+
+```js
+// 문제 코드 (toon-service.js)
+for (const { toonId, unreadPosts } of updates) {  // isComplete 구조분해 없음
+  t.hasNewEpisode = true;
+  t.unreadPosts = unreadPosts;
+  // isComplete 반영 안 됨
+}
+```
+
+추가로 `syncFromSupabase`도 `is_complete` 컬럼을 SELECT하지 않아서 수동 새로고침해도 반영 안 됨.
+
+**해결 방법:**
+
+세 곳 수정:
+
+```js
+// 1. check-toons.js — payload에 isComplete 추가
+const updates = results.map((r) => ({
+  toonId: r.toonId,
+  unreadPosts: r.unreadPosts,
+  isComplete: r.isComplete ?? false,  // ← 추가
+}));
+
+// 2. toon-service.js applyNotificationUpdates — isComplete 반영
+for (const { toonId, unreadPosts, isComplete } of updates) {
+  t.hasNewEpisode = true;
+  t.unreadPosts = unreadPosts;
+  if (isComplete) t.isComplete = true;  // ← 추가
+}
+
+// 3. toon-service.js syncFromSupabase — is_complete 컬럼 SELECT 추가
+.select('id, has_new_episode, last_episode, last_post_url, unread_posts, is_complete, updated_at')
+// + 루프 내에서 적용
+if (remote.is_complete && !local.isComplete) {
+  local.isComplete = true;
+  changed = true;
+}
+```
+
+---

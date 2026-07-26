@@ -142,6 +142,14 @@ async function sendPushNotification(token, results) {
   console.log(`[Push] 전송 결과:`, JSON.stringify(result?.data ?? result));
 }
 
+// ─── 새 포스트 필터 (last_post_id 이후만) ────────────────────────
+function filterNewPosts(posts, lastPostId) {
+  if (!lastPostId) return posts;
+  const lastSeenIdx = posts.findIndex(p => p.id === lastPostId);
+  // lastSeenIdx === -1: 이전 기준 포스트가 최신 6개 밖으로 밀린 경우 → 전부 처리
+  return lastSeenIdx === -1 ? posts : posts.slice(lastSeenIdx + 1);
+}
+
 // ─── 툰 하나 확인 ────────────────────────────────────────────────
 async function checkToon(toon) {
   const allPosts = await fetchLatestPosts(toon.username);
@@ -152,15 +160,24 @@ async function checkToon(toon) {
     .sort((a, b) => a.timestamp - b.timestamp);
 
   if (!toon.last_post_id && posts.length > 0) {
+    const newestPost = posts[posts.length - 1];
     await supabase
       .from("toons")
-      .update({ last_post_id: posts[0].id })
+      .update({ last_post_id: newestPost.id })
       .eq("id", toon.id);
-    console.log(`[${toon.username}] 첫 체크 — 기준점 저장`);
-    return false;
+    console.log(`[${toon.username}] 첫 체크 — 기준점 저장 (${newestPost.id})`);
+    return { found: false };
   }
 
-  console.log(`[${toon.username}] 게시물 ${posts.length}개 확인`);
+  // last_post_id 이후 새 포스트만 추림 — 이미 처리한 포스트 OCR 재호출 방지
+  const newPosts = filterNewPosts(posts, toon.last_post_id);
+
+  if (newPosts.length === 0) {
+    console.log(`[${toon.username}] 새 포스트 없음 — 스킵`);
+    return { found: false };
+  }
+
+  console.log(`[${toon.username}] 새 포스트 ${newPosts.length}개 확인 (전체 ${posts.length}개 중)`);
 
   const collected = [];
   const seenEps = new Set();
@@ -168,7 +185,7 @@ async function checkToon(toon) {
   let lastPost = null;
   let anyComplete = false;
 
-  for (const post of posts) {
+  for (const post of newPosts) {
     const caption = post.caption || "";
     const allWords = toon.series_name.split(/\s+/).filter((w) => w.length >= 2);
     const keyWords = [...allWords]
@@ -227,7 +244,14 @@ async function checkToon(toon) {
     }
   }
 
-  if (collected.length === 0) return { found: false };
+  if (collected.length === 0) {
+    // 새 포스트는 봤지만 새 에피소드 없음 — 기준점을 최신 포스트로 전진
+    const newestSeen = newPosts[newPosts.length - 1];
+    await supabase.from("toons")
+      .update({ last_post_id: newestSeen.id })
+      .eq("id", toon.id);
+    return { found: false };
+  }
 
   const highestEp = collected.reduce((max, c) => c.ep !== null && c.ep > max ? c.ep : max, toon.last_episode || 0);
   const representativePost = lastPost || collected[0].post;

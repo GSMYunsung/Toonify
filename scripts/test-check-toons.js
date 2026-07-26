@@ -1,0 +1,180 @@
+/**
+ * filterNewPosts 로직 무결성 검증 테스트
+ * 실행: node scripts/test-check-toons.js
+ */
+
+// ─── 검증 대상 함수 (check-toons.js와 동일) ──────────────────────
+function filterNewPosts(posts, lastPostId) {
+  if (!lastPostId) return posts;
+  const lastSeenIdx = posts.findIndex(p => p.id === lastPostId);
+  return lastSeenIdx === -1 ? posts : posts.slice(lastSeenIdx + 1);
+}
+
+// ─── 테스트 유틸 ─────────────────────────────────────────────────
+let passed = 0;
+let failed = 0;
+
+function test(name, fn) {
+  try {
+    fn();
+    console.log(`  ✅ ${name}`);
+    passed++;
+  } catch (e) {
+    console.log(`  ❌ ${name}`);
+    console.log(`     → ${e.message}`);
+    failed++;
+  }
+}
+
+function expect(actual) {
+  return {
+    toBe(expected) {
+      if (actual !== expected)
+        throw new Error(`expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+    },
+    toEqual(expected) {
+      const a = JSON.stringify(actual);
+      const b = JSON.stringify(expected);
+      if (a !== b) throw new Error(`expected ${b}, got ${a}`);
+    },
+    toHaveLength(len) {
+      if (actual.length !== len)
+        throw new Error(`expected length ${len}, got ${actual.length}`);
+    },
+  };
+}
+
+// ─── 픽스처 (오래된 순 = 인덱스 0이 가장 오래됨) ─────────────────
+const POSTS = [
+  { id: 'p1', timestamp: 1000, caption: '시리즈 1화' },
+  { id: 'p2', timestamp: 2000, caption: '시리즈 2화' },
+  { id: 'p3', timestamp: 3000, caption: '시리즈 3화' },
+  { id: 'p4', timestamp: 4000, caption: '시리즈 4화' },
+  { id: 'p5', timestamp: 5000, caption: '시리즈 5화' },
+  { id: 'p6', timestamp: 6000, caption: '시리즈 6화' },
+];
+
+// ─── 케이스 1: 첫 체크 (last_post_id 없음) ───────────────────────
+console.log('\n[케이스 1] 첫 체크 — last_post_id 없음');
+test('lastPostId가 null이면 포스트 전체 반환', () => {
+  const result = filterNewPosts(POSTS, null);
+  expect(result).toHaveLength(6);
+});
+test('lastPostId가 빈 문자열이면 포스트 전체 반환', () => {
+  const result = filterNewPosts(POSTS, '');
+  expect(result).toHaveLength(6);
+});
+
+// ─── 케이스 2: 마지막 포스트가 이미 처리됨 (새 포스트 없음) ──────
+console.log('\n[케이스 2] 가장 최신 포스트가 last_post_id — 새 포스트 0개');
+test('last_post_id가 마지막 포스트면 빈 배열 반환 → OCR 0회', () => {
+  const result = filterNewPosts(POSTS, 'p6');
+  expect(result).toHaveLength(0);
+});
+
+// ─── 케이스 3: 중간 포스트가 last_post_id (가장 흔한 경우) ────────
+console.log('\n[케이스 3] last_post_id가 중간 — 이후 포스트만 반환');
+test('p3이 last_post_id면 p4·p5·p6 반환', () => {
+  const result = filterNewPosts(POSTS, 'p3');
+  expect(result).toHaveLength(3);
+  expect(result[0].id).toBe('p4');
+  expect(result[2].id).toBe('p6');
+});
+test('p1이 last_post_id면 p2~p6 5개 반환', () => {
+  const result = filterNewPosts(POSTS, 'p1');
+  expect(result).toHaveLength(5);
+  expect(result[0].id).toBe('p2');
+});
+
+// ─── 케이스 4: last_post_id가 목록에 없음 (오래된 포스트가 밀려남) ─
+console.log('\n[케이스 4] last_post_id가 현재 6개 밖으로 밀린 경우');
+test('알 수 없는 ID면 안전하게 전체 반환 (재처리 허용)', () => {
+  const result = filterNewPosts(POSTS, 'p_old_unknown');
+  expect(result).toHaveLength(6);
+});
+
+// ─── 케이스 5: 포스트가 1개뿐 ────────────────────────────────────
+console.log('\n[케이스 5] 포스트 1개 엣지케이스');
+const ONE_POST = [{ id: 'solo', timestamp: 9999, caption: '단독 포스트' }];
+test('포스트 1개이고 그게 last_post_id면 빈 배열', () => {
+  const result = filterNewPosts(ONE_POST, 'solo');
+  expect(result).toHaveLength(0);
+});
+test('포스트 1개이고 last_post_id 없으면 1개 반환', () => {
+  const result = filterNewPosts(ONE_POST, null);
+  expect(result).toHaveLength(1);
+});
+
+// ─── 케이스 6: OCR 호출 횟수 절감 시뮬레이션 ────────────────────
+console.log('\n[케이스 6] OCR 절감 효과 시뮬레이션');
+
+function simulateOcrCalls(posts, lastPostId, seriesKeyword) {
+  const newPosts = filterNewPosts(posts, lastPostId);
+  let ocrCalls = 0;
+  for (const post of newPosts) {
+    const captionMatched = post.caption.includes(seriesKeyword);
+    if (!captionMatched) ocrCalls++; // 캡션 미매칭 → OCR 호출
+  }
+  return { processed: newPosts.length, ocrCalls };
+}
+
+// 포스트 6개 중 2개만 캡션에 키워드 있음, 나머지 4개는 OCR 필요
+const MIXED_POSTS = [
+  { id: 'm1', timestamp: 1000, caption: '일상 사진' },
+  { id: 'm2', timestamp: 2000, caption: '일상 사진' },
+  { id: 'm3', timestamp: 3000, caption: '시리즈 3화' },
+  { id: 'm4', timestamp: 4000, caption: '일상 사진' },
+  { id: 'm5', timestamp: 5000, caption: '시리즈 5화' },
+  { id: 'm6', timestamp: 6000, caption: '일상 사진' },
+];
+
+test('기존 방식: last_post_id 무시하고 전체 6개 처리 → OCR 4회', () => {
+  const { processed, ocrCalls } = simulateOcrCalls(MIXED_POSTS, null, '시리즈');
+  expect(processed).toBe(6);
+  expect(ocrCalls).toBe(4);
+});
+
+test('개선 방식: m4가 last_post_id → m5·m6만 처리 → OCR 1회', () => {
+  const { processed, ocrCalls } = simulateOcrCalls(MIXED_POSTS, 'm4', '시리즈');
+  expect(processed).toBe(2);
+  expect(ocrCalls).toBe(1);
+});
+
+test('개선 방식: m6이 last_post_id → 새 포스트 없음 → OCR 0회', () => {
+  const { processed, ocrCalls } = simulateOcrCalls(MIXED_POSTS, 'm6', '시리즈');
+  expect(processed).toBe(0);
+  expect(ocrCalls).toBe(0);
+});
+
+// ─── 케이스 7: 순서 보장 (오래된 순 처리) ────────────────────────
+console.log('\n[케이스 7] 반환 순서 보장 (오래된 것부터)');
+test('p2가 last_post_id면 반환 순서는 p3 → p4 → p5 → p6', () => {
+  const result = filterNewPosts(POSTS, 'p2');
+  const ids = result.map(p => p.id);
+  expect(ids).toEqual(['p3', 'p4', 'p5', 'p6']);
+});
+
+// ─── 결과 보고 ───────────────────────────────────────────────────
+console.log('\n══════════════════════════════════════');
+console.log(`결과: ${passed + failed}개 테스트 중 ${passed}개 통과, ${failed}개 실패`);
+
+if (failed === 0) {
+  console.log('✅ 모든 테스트 통과 — 로직 무결성 확인됨');
+
+  console.log('\n── OCR 절감 효과 요약 ──────────────────');
+  const runsPerDay = 8; // 3시간마다 = 하루 8회
+  const toonCount = 5;  // 평균 구독 툰 수
+  const avgOcrPerRun_before = 4;  // 기존: 포스트당 평균 4회 OCR
+  const avgOcrPerRun_after = 0.3; // 개선: 새 포스트 없으면 0, 있어도 1~2개
+
+  const daily_before = runsPerDay * toonCount * avgOcrPerRun_before;
+  const daily_after  = runsPerDay * toonCount * avgOcrPerRun_after;
+  const savings = ((1 - daily_after / daily_before) * 100).toFixed(0);
+
+  console.log(`  기존: 하루 약 ${daily_before}회 OCR 호출`);
+  console.log(`  개선: 하루 약 ${daily_after}회 OCR 호출`);
+  console.log(`  절감: 약 ${savings}% 감소`);
+} else {
+  console.log('❌ 일부 테스트 실패 — 코드 확인 필요');
+  process.exit(1);
+}

@@ -11,7 +11,7 @@ module.exports = {
     updates: {
       url: "https://u.expo.dev/e5379365-91ef-438c-b10c-5b3ee7bf7007",
       enabled: true,
-      checkAutomatically: "ON_ERROR_RECOVERY",
+      checkAutomatically: "ON_LOAD",
     },
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",

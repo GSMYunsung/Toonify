@@ -3,7 +3,6 @@
 > 이 파일은 AI 직원의 업무 매뉴얼입니다
 > 한 번 만들어두면 매번 이걸 읽고 일합니다
 
-> 이 파일은 프론트엔드 개발자의 업무 매뉴얼입니다.
 > 사용자가 인스타툰의 다음 편을 놓치지 않도록 돕는 React Native 앱 서비스를 구축합니다.
 
 ---
@@ -12,7 +11,7 @@
 
 1. 사용자 언어 사용 — 개발 용어보다는 기능 위주로 설명 (예: 'FCM 발송' 대신 '알림 보내기')
 
-2. 모바일 앱 (React Native + Expo) — iOS/Android 모두 지원, Expo Go로 즉시 테스트
+2. 모바일 앱 (React Native + Expo) — iOS/Android 모두 지원
 
 3. 플랜 먼저 — 로직이나 UI를 짜기 전에 사용자 흐름(User Flow)부터 보고
 
@@ -20,44 +19,125 @@
 
 5. 보안 철저 — API 키는 `config.js`에 보관 (`.gitignore` 포함), 절대 외부 유출 금지
 
+6. JS 변경만 → OTA 배포 (`eas update --channel production`), 네이티브 변경 → 새 빌드 필요
+
 ---
 
 ## 기술 스택
 
-| 항목        | 내용                                                         |
-| ----------- | ------------------------------------------------------------ |
-| 프레임워크  | React Native (Expo SDK 54)                                   |
-| 데이터 저장 | AsyncStorage (`@react-native-async-storage/async-storage`)   |
-| 알림        | `expo-notifications` (로컬 푸시)                             |
-| 인스타 API  | hasdata (`https://api.hasdata.com/scrape/instagram/profile`) |
-| API 키 관리 | `config.js` → `HASDATA_KEY`                                  |
-| 제스처      | `react-native-gesture-handler` (스와이프 삭제)               |
+| 항목           | 내용                                                                  |
+| -------------- | --------------------------------------------------------------------- |
+| 프레임워크     | React Native (Expo SDK 54)                                            |
+| 로컬 저장      | AsyncStorage (`@react-native-async-storage/async-storage`)            |
+| 원격 저장/동기 | Supabase (PostgreSQL) — `toons`, `push_tokens` 테이블                 |
+| 알림           | `expo-notifications` + Expo Push API (서버→기기 FCM/APNs)            |
+| 인스타 API     | hasdata (`https://api.hasdata.com/scrape/instagram/profile`)          |
+| OCR            | `@react-native-ml-kit/text-recognition` (온디바이스, 앱 내에서만)     |
+| 서버 배치      | GitHub Actions cron (3시간마다) — `scripts/check-toons.js`            |
+| 제스처         | `react-native-gesture-handler` (스와이프 삭제)                        |
+| 빌드/배포      | EAS Build (production 채널) + EAS Update (OTA)                        |
+| API 키 관리    | `.env.local` → Metro 인라인 (로컬) / EAS Secrets → Metro 인라인 (빌드) |
+
+---
+
+## API 키 흐름
+
+```
+로컬 개발:   .env.local  →  EXPO_PUBLIC_*  →  config.js export
+EAS 빌드:    EAS Secrets →  EXPO_PUBLIC_*  →  config.js export (번들에 인라인)
+```
+
+- `EXPO_PUBLIC_HASDATA_KEY` — hasdata API 키
+- `EXPO_PUBLIC_SUPABASE_URL` — Supabase 프로젝트 URL
+- `EXPO_PUBLIC_SUPABASE_ANON_KEY` — Supabase anon key
+- 환경변수 변경 시 → OTA 재배포 또는 새 빌드 필요 (번들에 인라인되므로)
 
 ---
 
 ## 파일 구조
 
 ```
-toon-notifier-app/               ← React Native 앱 (메인 프로젝트)
-├── App.js                       ← 루트: 알림 핸들러 + GestureHandlerRootView
-├── app.json                     ← Expo 앱 설정 (이름: 인스타툰 알림)
-├── config.js                    ← API 키 보관 (.gitignore에 포함)
+toon-notifier-app/
+├── App.js                        ← 루트: 알림 핸들러 + GestureHandlerRootView + 푸시 토큰 등록
+├── app.config.js                 ← Expo 설정 (OTA: ON_LOAD, runtimeVersion: appVersion)
+├── eas.json                      ← EAS 빌드 프로필 (production: autoIncrement)
+├── config.js                     ← EXPO_PUBLIC_* 환경변수 export (.gitignore 포함)
+├── scripts/
+│   ├── check-toons.js            ← GitHub Actions 배치: 에피소드 감지 + 푸시 알림 발송
+│   └── test-check-toons.js       ← filterNewPosts 로직 테스트 (16개 케이스)
 └── src/
+    ├── constants/
+    │   └── urls.js               ← API Base URL 상수 (HASDATA_BASE_URL 등)
     ├── screens/
-    │   └── HomeScreen.js        ← 메인 화면 (리스트 + 새로고침)
+    │   └── HomeScreen.js         ← 메인 화면 (리스트 + 새로고침 + AppState 복귀 처리)
     ├── components/
-    │   ├── ToonCard.js          ← 카드 UI (스와이프 삭제, NEW 배지)
-    │   ├── AddToonModal.js      ← 툰 추가 바텀시트 모달
-    │   └── EmptyState.js        ← 빈 상태 화면
+    │   ├── ToonCard.js           ← 카드 UI (스와이프 삭제, 에피소드 목록 토글)
+    │   ├── CardShape.js          ← 카드 좌측 Shape 아이콘 (SVG, ID 기반 결정론적 생성)
+    │   ├── AddToonModal.js       ← 툰 추가/수정 바텀시트 (링크 붙여넣기 → 자동 파싱)
+    │   └── EmptyState.js         ← 빈 상태 화면
     ├── services/
-    │   ├── toon-service.js      ← AsyncStorage CRUD + 에피소드 감지
-    │   └── instagram-api.js     ← hasdata API 호출 및 응답 파싱
+    │   ├── toon-service.js       ← barrel re-export (toon-store + check-service + notifications)
+    │   ├── toon-store.js         ← AsyncStorage CRUD + Supabase 동기화
+    │   ├── check-service.js      ← 에피소드 감지 로직 (checkToon, checkAllToons)
+    │   ├── notifications.js      ← 로컬 알림 전송 + 권한 요청
+    │   ├── instagram-api.js      ← hasdata API 호출 및 응답 파싱
+    │   ├── ocr-service.js        ← 온디바이스 OCR (ML Kit, 앱 내에서만 사용)
+    │   └── supabase.js           ← Supabase 클라이언트
     ├── hooks/
-    │   └── useKeywordDetector.js ← 화/편/ep 숫자 추출 정규식
-    └── utils/
-        └── emoji-icon.js        ← 키워드 → 이모지 매핑 (20개 카테고리)
+    │   └── useKeywordDetector.js ← 화/편/ep 숫자 추출 정규식 + 완결 감지
+    ├── context/
+    │   └── ThemeContext.js       ← 다크/라이트 테마
+    └── theme/
+        └── index.js              ← 테마 토큰 (색상, 폰트)
+```
 
-clode_code/                      ← 기존 웹 PWA (레거시, 참고용)
+---
+
+## 서비스 레이어 구조
+
+```
+toon-service.js (barrel)
+    ↓ re-exports
+toon-store.js          — getToons, addToon, updateToon, deleteToon, advanceEpisode,
+                          syncFromSupabase, applyNotificationUpdates ...
+check-service.js       — checkToon, checkAllToons, buildEpisodeHistory, buildUnreadPosts
+notifications.js       — sendLocalNotification, requestNotificationPermission
+```
+
+- `toon-service`에서 import하면 위 3개를 모두 쓸 수 있음 (기존 import 경로 호환)
+- `checkToon`은 앱 내 수동 새로고침용, 서버 배치(`check-toons.js`)와 별개
+
+---
+
+## 알림 흐름
+
+```
+GitHub Actions (3시간마다)
+    → scripts/check-toons.js
+        → hasdata API로 새 포스트 확인 (last_post_id 기준 중복 제거)
+        → 캡션에서 화수 추출 (서버 OCR: ocr.space API)
+        → 새 화수 감지 시 Supabase 업데이트 + Expo Push API로 알림 발송
+            → 알림 payload: { updates: [{ toonId, unreadPosts, isComplete }] }
+
+앱 (알림 수신)
+    → applyNotificationUpdates(updates) — 로컬 AsyncStorage 즉시 반영
+    → loadToons() — 화면 업데이트
+```
+
+---
+
+## Supabase 테이블
+
+**`toons`** — 서버와 앱 간 에피소드 상태 동기화
+```
+id, username, series_name, last_episode, read_episode,
+has_new_episode, unread_posts (JSON), is_complete,
+device_id, last_post_id, last_post_url, updated_at
+```
+
+**`push_tokens`** — 기기별 Expo 푸시 토큰
+```
+token, platform, device_id
 ```
 
 ---
@@ -72,7 +152,6 @@ clode_code/                      ← 기존 웹 PWA (레거시, 참고용)
       "shortcode": "...",
       "caption": "시리즈명 5화",
       "displayUrl": "https://...",
-      "images": ["https://..."],
       "url": "https://www.instagram.com/p/.../",
       "timestamp": "2026-05-16T07:34:58.000Z"
     }
@@ -82,26 +161,32 @@ clode_code/                      ← 기존 웹 PWA (레거시, 참고용)
 
 ---
 
-## 데이터 모델 (toon 객체)
+## 데이터 모델 (toon 객체 — AsyncStorage)
 
 ```js
 {
-  id: string,           // UUID
-  username: string,     // 인스타 계정명
-  seriesName: string,   // 시리즈 이름 (키워드 매칭에 사용)
-  lastEpisode: number,  // 가장 최근 감지된 화수
-  readEpisode: number,  // 사용자가 읽음 처리한 화수
-  hasNewEpisode: bool,  // 새 에피소드 여부
+  id: string,              // UUID
+  username: string,        // 인스타 계정명
+  seriesName: string,      // 시리즈 이름 (키워드 매칭에 사용)
+  lastEpisode: number,     // 가장 최근 감지된 화수
+  readEpisode: number,     // 사용자가 읽음 처리한 화수
+  hasNewEpisode: bool,     // 새 에피소드 여부
+  isComplete: bool,        // 완결 여부
+  pendingComplete: bool,   // 완결이지만 아직 안 읽은 화수 있음
+  unreadPosts: [{ episode, url }],    // 읽지 않은 화수 목록
+  episodeHistory: [{ episode, url }], // 읽은 화수 히스토리
+  lastPostId: string,      // 마지막으로 처리한 포스트 ID (중복 감지용)
   lastThumbnailUrl: string | null,
   lastPostUrl: string,
-  addedAt: string,      // ISO 날짜
+  undetectable: bool,      // 캡션에서 키워드 감지 불가 (직접 확인 필요)
+  addedAt: string,         // ISO 날짜
   updatedAt: string,
 }
 ```
 
 ---
 
-## 에피소드 라벨 규칙
+## 에피소드 라벨 규칙 (ToonCard 메타 텍스트)
 
 | 상태             | 표시                        |
 | ---------------- | --------------------------- |
@@ -113,31 +198,48 @@ clode_code/                      ← 기존 웹 PWA (레거시, 참고용)
 
 ## 기능 1: 인스타툰 관리
 
-- 툰 추가: 인스타 계정(`username`) + 시리즈 이름(`seriesName`) + 마지막 본 화수 입력
+- 툰 추가: 인스타 게시물 링크 붙여넣기 → 계정명/시리즈명/화수 자동 파싱
 - 삭제: 카드를 왼쪽으로 스와이프
-- 읽음 처리: 카드 탭 (NEW 상태일 때만)
+- 수정: 카드 길게 누르기 → 수정 모달
+- 읽음 처리: 에피소드 목록 → 화수 탭 → 인스타 열림 + 읽음 표시
 
-## 기능 2: 에피소드 감지 로직
+## 기능 2: 에피소드 감지 로직 (앱 내 / 서버 공통)
 
-1. hasdata API로 `latestPosts` 가져오기
-2. `seriesName`의 단어가 `caption`에 포함되는지 확인
-3. `extractEpisodeNumber(caption)` 으로 화수 추출 (`n화`, `n편`, `ep.n`, `#n`)
-4. 기존 `lastEpisode`보다 크면 → `hasNewEpisode: true` + 로컬 알림 전송
+1. hasdata API로 `latestPosts` 가져오기 (최신 12개)
+2. `last_post_id` 기준으로 이미 처리한 포스트 필터링
+3. `seriesName` 키워드가 `caption`에 포함되는지 확인
+4. `extractEpisodeNumber(caption)` 으로 화수 추출 (`n화`, `n편`, `ep.n`, `#n`)
+5. 캡션에서 못 찾으면 → OCR 폴백 (앱: ML Kit 온디바이스, 서버: ocr.space)
+6. 새 화수 감지 시 → `hasNewEpisode: true` + 알림 전송
 
 ## 기능 3: 자동 확인
 
-- 앱 실행 중: 30분마다 `checkAllToons()` 자동 실행
-- 수동: 아래로 당겨서 새로고침 (`RefreshControl`)
-- API 과부하 방지: 툰 1개 확인 후 1~2초 딜레이
+- **서버**: GitHub Actions cron 3시간마다 → 푸시 알림으로 앱에 전달
+- **수동**: 아래로 당겨서 새로고침 (`RefreshControl`) → `checkAllToons(forceAll: true)`
+- 완결 툰 / `undetectable` 툰은 자동 확인 제외
 
-## 기능 4: 앱 실행 방법
+## 기능 4: 빌드 및 배포
+
+```bash
+# JS만 변경 → OTA 배포 (즉시 적용, 새 빌드 불필요)
+eas update --channel production --message "변경 내용"
+
+# 네이티브 변경 또는 OTA 설정 변경 → 새 빌드
+eas build --platform ios --profile production
+eas submit --platform ios --latest
+```
+
+- OTA 정책: `checkAutomatically: "ON_LOAD"` — 앱 실행마다 자동 확인 후 다음 실행 때 적용
+- 빌드 번호: EAS `autoIncrement: true` 자동 관리 (현재 빌드 13)
+
+## 기능 5: 앱 로컬 실행 방법
 
 ```bash
 cd /Users/choeyunseong/프로젝트/toon-notifier-app
 npx expo start
 ```
 
-Expo Go 앱으로 QR 코드 스캔 → 즉시 폰에서 확인
+> Expo Go에서는 ML Kit 온디바이스 OCR 미지원 — OCR 테스트는 `expo-dev-client` 빌드 필요
 
 ---
 

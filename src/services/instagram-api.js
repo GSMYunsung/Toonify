@@ -1,14 +1,12 @@
 import { HASDATA_KEY } from '../../config';
-
-const BASE_URL = 'https://api.hasdata.com/scrape/instagram/profile';
-const POST_URL = 'https://api.hasdata.com/scrape/instagram/post';
+import { HASDATA_BASE_URL, INSTAGRAM_OEMBED_URL } from '../constants/urls';
 
 export async function fetchLatestPosts(username) {
   if (!HASDATA_KEY || HASDATA_KEY.includes('여기에')) {
     throw new Error('config.js에 hasdata API 키를 입력해주세요.');
   }
 
-  const res = await fetch(`${BASE_URL}?handle=${encodeURIComponent(username)}`, {
+  const res = await fetch(`${HASDATA_BASE_URL}?handle=${encodeURIComponent(username)}`, {
     method: 'GET',
     headers: {
       'x-api-key': HASDATA_KEY,
@@ -85,7 +83,7 @@ export async function fetchPostByUrl(postUrl) {
 
   // ── 1순위: Instagram oEmbed (API 키 불필요, 구조화된 JSON) ──
   try {
-    const oembedUrl = `https://www.instagram.com/api/v1/oembed/?url=${encodeURIComponent(cleanUrl)}&maxwidth=540`;
+    const oembedUrl = `${INSTAGRAM_OEMBED_URL}?url=${encodeURIComponent(cleanUrl)}&maxwidth=540`;
     console.log('[oEmbed] 요청:', oembedUrl);
 
     const oembedRes = await fetch(oembedUrl, {

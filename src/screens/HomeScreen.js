@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Animated,
   ActivityIndicator,
+  AppState,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -74,19 +75,24 @@ export default function HomeScreen() {
     };
 
     const init = async () => {
-      // 앱 실행 시 알림 payload가 있으면 로컬에 바로 반영 — 네트워크 없음
-      const lastResponse = await Notifications.getLastNotificationResponseAsync();
-      if (lastResponse) {
-        const notifTime = lastResponse.notification?.date ?? 0;
-        const isFresh = Date.now() - notifTime * 1000 < 5 * 60 * 1000;
-        const updates = lastResponse.notification?.request?.content?.data?.updates;
-        if (isFresh && updates) {
-          lastProcessedNotifId.current = lastResponse.notification?.request?.identifier;
-          await applyNotificationUpdates(updates);
+      try {
+        // 앱 실행 시 알림 payload가 있으면 로컬에 바로 반영 — 네트워크 없음
+        const lastResponse = await Notifications.getLastNotificationResponseAsync();
+        if (lastResponse) {
+          const notifTime = lastResponse.notification?.date ?? 0;
+          const isFresh = Date.now() - notifTime * 1000 < 5 * 60 * 1000;
+          const updates = lastResponse.notification?.request?.content?.data?.updates;
+          if (isFresh && updates) {
+            lastProcessedNotifId.current = lastResponse.notification?.request?.identifier;
+            await applyNotificationUpdates(updates);
+          }
         }
+      } catch (e) {
+        console.warn('[init] 알림 처리 실패 (무시):', e.message);
+      } finally {
+        await loadToons();
+        setInitialLoading(false);
       }
-      await loadToons();
-      setInitialLoading(false);
     };
     init();
 
@@ -97,9 +103,15 @@ export default function HomeScreen() {
       (r) => handleNotification(r.notification),
     );
 
+    // 백그라운드 → 포그라운드 복귀 시 툰 목록 재로드
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') loadToons();
+    });
+
     return () => {
       notifReceived.remove();
       notifResponse.remove();
+      appStateSub.remove();
       clearTimeout(toastTO.current);
     };
   }, []);

@@ -160,12 +160,13 @@ async function checkToon(toon) {
     .sort((a, b) => a.timestamp - b.timestamp);
 
   if (!toon.last_post_id && posts.length > 0) {
-    const newestPost = posts[posts.length - 1];
+    // 가장 오래된 포스트를 기준점으로 — 다음 실행 때 그 이후 포스트(기등록 화수 이후)를 처리
+    const oldestPost = posts[0];
     await supabase
       .from("toons")
-      .update({ last_post_id: newestPost.id })
+      .update({ last_post_id: oldestPost.id })
       .eq("id", toon.id);
-    console.log(`[${toon.username}] 첫 체크 — 기준점 저장 (${newestPost.id})`);
+    console.log(`[${toon.username}] 첫 체크 — 기준점 저장 (${oldestPost.id})`);
     return { found: false };
   }
 

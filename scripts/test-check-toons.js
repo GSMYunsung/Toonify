@@ -154,6 +154,39 @@ test('p2가 last_post_id면 반환 순서는 p3 → p4 → p5 → p6', () => {
   expect(ids).toEqual(['p3', 'p4', 'p5', 'p6']);
 });
 
+// ─── 케이스 8: 1화 등록, 2·3화 이미 나온 상황 ───────────────────
+console.log('\n[케이스 8] 1화로 등록 시 2·3화 감지 여부 (회귀 테스트)');
+
+const EXISTING_POSTS = [
+  { id: 'ep1', timestamp: 1000, caption: '시리즈 1화' },
+  { id: 'ep2', timestamp: 2000, caption: '시리즈 2화' },
+  { id: 'ep3', timestamp: 3000, caption: '시리즈 3화' },
+];
+
+test('첫 체크: 기준점을 가장 오래된 포스트(1화)로 저장해야 함', () => {
+  const oldestPost = EXISTING_POSTS[0];
+  expect(oldestPost.id).toBe('ep1'); // posts[0] = 1화
+});
+
+test('두 번째 체크: last_post_id=ep1이면 ep2·ep3 반환', () => {
+  const result = filterNewPosts(EXISTING_POSTS, 'ep1');
+  expect(result).toHaveLength(2);
+  expect(result[0].id).toBe('ep2');
+  expect(result[1].id).toBe('ep3');
+});
+
+test('[회귀] 첫 체크 기준점이 newest(ep3)면 두 번째 체크에서 ep2·ep3 놓침', () => {
+  // 이게 버그였던 동작 — 이제는 이렇게 동작하면 안 됨
+  const wrongResult = filterNewPosts(EXISTING_POSTS, 'ep3'); // newest를 기준으로 잡으면
+  expect(wrongResult).toHaveLength(0); // ep2·ep3 모두 감지 불가 (버그)
+});
+
+test('[정상] 첫 체크 기준점이 oldest(ep1)면 두 번째 체크에서 ep2·ep3 감지', () => {
+  const correctResult = filterNewPosts(EXISTING_POSTS, 'ep1'); // oldest를 기준으로 잡으면
+  const detectedEps = correctResult.map(p => p.id);
+  expect(detectedEps).toEqual(['ep2', 'ep3']); // ep2·ep3 정상 감지 ✓
+});
+
 // ─── 결과 보고 ───────────────────────────────────────────────────
 console.log('\n══════════════════════════════════════');
 console.log(`결과: ${passed + failed}개 테스트 중 ${passed}개 통과, ${failed}개 실패`);

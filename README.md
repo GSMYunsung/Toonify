@@ -347,34 +347,30 @@ collected 비어있음?
 
 ---
 
-## 작업 분담 보고서
+## 기능구현서
 
-|     구분      | 항목             | 내용                                                                         |
-| :-----------: | ---------------- | ---------------------------------------------------------------------------- |
-|   👤 **나**   | 서비스 기획      | 인스타툰 알림 앱 아이디어 및 전체 방향 설정                                  |
-|   👤 **나**   | 요구사항 정의    | 기능 목록, 에피소드 감지 방식, UI 흐름 결정                                  |
-|   👤 **나**   | API 키 발급      | hasdata, OCR.space, Supabase 계정 생성 및 키 제공                            |
-|   👤 **나**   | 기술 결정        | OCR 엔진 선택 (OCR.space Engine 2 지정)                                      |
-|   👤 **나**   | QA 테스트        | 실기기(Expo Go)에서 기능 테스트 및 버그 리포트                               |
-|   👤 **나**   | 예외 케이스 발굴 | 완결화 표기, 해시태그 형식, 중복 알림, 화수 null 등 발견 및 수정 요청        |
-|   👤 **나**   | 키워드 전략 개선 | 긴 시리즈 제목 오탐 가능성 발견 및 개선 방향 제시                            |
-|   👤 **나**   | 사용성 개선      | 드래그 투 디스미스, `@` 입력 처리 등 UX 불편 직접 발견                       |
-| 🤖 **Claude** | 전체 아키텍처    | 서비스 레이어 분리, AsyncStorage + Supabase 이중 저장 구조 설계              |
-| 🤖 **Claude** | 에피소드 감지    | 캡션 키워드 매칭 + `n화` / `n편` / `ep.n` / `#n` 화수 추출 정규식 구현       |
-| 🤖 **Claude** | OCR 연동         | OCR.space API 통합 (`ocr-service.js`), 이미지 → 텍스트 변환 흐름 구현        |
-| 🤖 **Claude** | 하이브리드 감지  | 캡션 키워드 없음 → OCR / 캡션 화수 없음 → OCR 폴백 2단계 구조 설계           |
-| 🤖 **Claude** | OCR 화수 추출    | 괄호 숫자 `(2,`, 줄 단위 독립 숫자 패턴 추가 (`extractEpisodeNumberFromOCR`) |
-| 🤖 **Claude** | 완결 처리        | `완`/`완결` 패턴 감지 → 화수 없을 시 `lastEpisode + 1` 가상 화수 부여        |
-| 🤖 **Claude** | 키워드 강화      | 긴 제목 오탐 방지 — 가장 긴 단어 2개만 캡션 매칭에 사용                      |
-| 🤖 **Claude** | 중복 알림 방지   | `hasNewEpisode`가 이미 `true`이면 알림 재발송 차단                           |
-| 🤖 **Claude** | 배치 시스템      | GitHub Actions 1시간 인터벌 배치, Supabase 연동, Expo Push API 알림 전송     |
-| 🤖 **Claude** | Supabase 연동    | 툰 추가/삭제/읽음 처리 시 Supabase 동기화, push token 저장 구조 설계         |
-| 🤖 **Claude** | UI 구현          | 카드 리스트, NEW/구독중 섹션 분리, NEW 배지, 이모지 아이콘 자동 매핑         |
-| 🤖 **Claude** | 바텀시트 모달    | `PanResponder` 드래그 투 디스미스, TextInput 충돌 없이 전체 영역 적용        |
-| 🤖 **Claude** | 스와이프 삭제    | `react-native-gesture-handler` Swipeable 좌스와이프 삭제 구현                |
-| 🤖 **Claude** | 다음 화 네비게이션 | `unreadPosts` 배열로 안 본 화 순서대로 링크 이동, `advanceEpisode()` 구현  |
-| 🤖 **Claude** | 썸네일 표시      | 새 에피소드 감지 시 게시물 이미지 카드에 표시, 이모지 fallback              |
-| 🤖 **Claude** | 툰 수정 기능     | 롱프레스 → 수정 모달 (시리즈명 / 읽은 화수), `updateToonInfo()` + Supabase  |
-| 🤖 **Claude** | 라이트/다크 모드 | ThemeContext + AsyncStorage 저장, 시스템 기본값 연동                        |
-| 🤖 **Claude** | Supabase 동기화  | 포그라운드 복귀 시 배치 업데이트 반영, `fillMissingUnreadPosts()` 구현      |
-| 🤖 **Claude** | 버그 수정        | 첫 체크 조기 종료로 새 화수 미감지, stale props, `@` 입력 처리 등           |
+### 핵심 기능
+
+| 기능 | 설명 |
+| ---- | ---- |
+| 툰 등록 | 인스타 게시물 링크 붙여넣기 → 계정명 / 시리즈명 / 화수 자동 파싱 |
+| 에피소드 감지 | 캡션 키워드 매칭 + 정규식 화수 추출 (`n화` / `n편` / `ep.n` / `#n`) |
+| OCR 폴백 | 캡션에서 화수 추출 실패 시 썸네일 이미지 OCR로 재시도 (ML Kit 온디바이스) |
+| 완결 처리 | `완` / `완결` 패턴 감지 → 가상 화수 부여, 완결 배지 표시 |
+| 푸시 알림 | GitHub Actions 배치(3시간)가 새 화수 감지 시 Expo Push로 기기 알림 전송 |
+| 에피소드 목록 | 카드 탭 시 읽은 화 / 안 읽은 화 목록 펼치기, 화수 탭 → 인스타 이동 + 읽음 처리 |
+| 스와이프 삭제 | 카드 좌스와이프로 툰 삭제 |
+| 수정 | 카드 롱프레스 → 시리즈명 / 읽은 화수 수정 |
+| 다크 모드 | 시스템 기본값 연동, 헤더 버튼으로 수동 전환 |
+| 백그라운드 복귀 | AppState 감지 → 포그라운드 복귀 시 목록 자동 갱신 |
+
+### 아키텍처
+
+| 레이어 | 파일 | 역할 |
+| ------ | ---- | ---- |
+| 앱 로직 | `toon-store.js` | AsyncStorage CRUD + Supabase 동기화 |
+| 앱 로직 | `check-service.js` | 에피소드 감지 (`checkToon`, `checkAllToons`) |
+| 앱 로직 | `notifications.js` | 로컬 알림 전송 |
+| 서버 배치 | `scripts/check-toons.js` | GitHub Actions: 감지 + 푸시 알림 |
+| 데이터 | Supabase | 서버↔앱 상태 동기화, 푸시 토큰 저장 |
+| OTA | EAS Update | JS 변경 시 새 빌드 없이 즉시 배포 |

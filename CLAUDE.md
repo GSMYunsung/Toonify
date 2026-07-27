@@ -1,8 +1,9 @@
-# Toonify — 기능구현서
+# 프론트엔드 개발자 — 업무 지시서 (인스타툰 알림 서비스)
 
-> 인스타그램 웹툰의 새 에피소드를 자동으로 감지해 푸시 알림으로 알려주는 React Native 앱
+> 이 파일은 AI 직원의 업무 매뉴얼입니다
+> 한 번 만들어두면 매번 이걸 읽고 일합니다
 
----
+> 사용자가 인스타툰의 다음 편을 놓치지 않도록 돕는 React Native 앱 서비스를 구축합니다.
 
 ---
 
@@ -24,17 +25,17 @@
 
 ## 기술 스택
 
-| 항목           | 내용                                                                  |
-| -------------- | --------------------------------------------------------------------- |
-| 프레임워크     | React Native (Expo SDK 54)                                            |
-| 로컬 저장      | AsyncStorage (`@react-native-async-storage/async-storage`)            |
-| 원격 저장/동기 | Supabase (PostgreSQL) — `toons`, `push_tokens` 테이블                 |
-| 알림           | `expo-notifications` + Expo Push API (서버→기기 FCM/APNs)            |
-| 인스타 API     | hasdata (`https://api.hasdata.com/scrape/instagram/profile`)          |
-| OCR            | `@react-native-ml-kit/text-recognition` (온디바이스, 앱 내에서만)     |
-| 서버 배치      | GitHub Actions cron (3시간마다) — `scripts/check-toons.js`            |
-| 제스처         | `react-native-gesture-handler` (스와이프 삭제)                        |
-| 빌드/배포      | EAS Build (production 채널) + EAS Update (OTA)                        |
+| 항목           | 내용                                                                   |
+| -------------- | ---------------------------------------------------------------------- |
+| 프레임워크     | React Native (Expo SDK 54)                                             |
+| 로컬 저장      | AsyncStorage (`@react-native-async-storage/async-storage`)             |
+| 원격 저장/동기 | Supabase (PostgreSQL) — `toons`, `push_tokens` 테이블                  |
+| 알림           | `expo-notifications` + Expo Push API (서버→기기 FCM/APNs)              |
+| 인스타 API     | hasdata (`https://api.hasdata.com/scrape/instagram/profile`)           |
+| OCR            | `@react-native-ml-kit/text-recognition` (온디바이스, 앱 내에서만)      |
+| 서버 배치      | GitHub Actions cron (3시간마다) — `scripts/check-toons.js`             |
+| 제스처         | `react-native-gesture-handler` (스와이프 삭제)                         |
+| 빌드/배포      | EAS Build (production 채널) + EAS Update (OTA)                         |
 | API 키 관리    | `.env.local` → Metro 인라인 (로컬) / EAS Secrets → Metro 인라인 (빌드) |
 
 ---
@@ -128,6 +129,7 @@ GitHub Actions (3시간마다)
 ## Supabase 테이블
 
 **`toons`** — 서버와 앱 간 에피소드 상태 동기화
+
 ```
 id, username, series_name, last_episode, read_episode,
 has_new_episode, unread_posts (JSON), is_complete,
@@ -135,6 +137,7 @@ device_id, last_post_id, last_post_url, updated_at
 ```
 
 **`push_tokens`** — 기기별 Expo 푸시 토큰
+
 ```
 token, platform, device_id
 ```

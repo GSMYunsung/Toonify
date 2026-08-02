@@ -21,6 +21,21 @@
 
 6. JS 변경만 → OTA 배포 (`eas update --channel production`), 네이티브 변경 → 새 빌드 필요
 
+7. OTA 배포 전 자가검증 필수 — 아래 순서 반드시 지킬 것
+   - 변경된 로직을 직접 추적하며 엣지 케이스 확인 (오탐/누락 시나리오)
+   - 새 기능·버그픽스가 있으면 `scripts/test-check-toons.js`에 테스트 케이스 추가
+   - TROUBLESHOOTING.md에 해결한 문제 기록
+   - 검증 완료 후 OTA 배포
+
+8. 로직은 한 번만 작성, 재사용 필수
+   - 작업 시작 전 기존에 동일하거나 유사한 함수·로직이 있는지 먼저 확인할 것
+   - 이미 선언된 함수가 있으면 새로 만들지 말고 반드시 그것을 가져다 씀
+   - 같은 로직을 두 곳에 따로 작성하거나 복붙하는 것 금지
+   - 로직을 수정할 때 한 곳만 고치고 다른 곳을 빠뜨리는 것 금지
+   - 앱(`src/`)과 서버(`scripts/`)가 함께 쓰는 로직은 `src/utils/`에 공유 파일로 분리하고
+     양쪽이 import/require해서 사용
+   - 새 공통 로직이 생기면 즉시 공유 파일로 추출할 것
+
 ---
 
 ## 기술 스택
@@ -32,7 +47,7 @@
 | 원격 저장/동기 | Supabase (PostgreSQL) — `toons`, `push_tokens` 테이블                  |
 | 알림           | `expo-notifications` + Expo Push API (서버→기기 FCM/APNs)              |
 | 인스타 API     | hasdata (`https://api.hasdata.com/scrape/instagram/profile`)           |
-| OCR            | `@react-native-ml-kit/text-recognition` (온디바이스, 앱 내에서만)      |
+| OCR            | `ocr.space` API (앱 + 서버 공통, 무료 25,000회/월)                     |
 | 서버 배치      | GitHub Actions cron (3시간마다) — `scripts/check-toons.js`             |
 | 제스처         | `react-native-gesture-handler` (스와이프 삭제)                         |
 | 빌드/배포      | EAS Build (production 채널) + EAS Update (OTA)                         |
@@ -81,8 +96,10 @@ toon-notifier-app/
     │   ├── check-service.js      ← 에피소드 감지 로직 (checkToon, checkAllToons)
     │   ├── notifications.js      ← 로컬 알림 전송 + 권한 요청
     │   ├── instagram-api.js      ← hasdata API 호출 및 응답 파싱
-    │   ├── ocr-service.js        ← 온디바이스 OCR (ML Kit, 앱 내에서만 사용)
+    │   ├── ocr-service.js        ← OCR (ocr.space API, 앱+서버 공통)
     │   └── supabase.js           ← Supabase 클라이언트
+    ├── utils/
+    │   └── matchingUtils.js      ← 시리즈 키워드 매칭 공통 로직 (앱+서버 공유, CommonJS)
     ├── hooks/
     │   └── useKeywordDetector.js ← 화/편/ep 숫자 추출 정규식 + 완결 감지
     ├── context/
@@ -211,7 +228,7 @@ token, platform, device_id
 2. `last_post_id` 기준으로 이미 처리한 포스트 필터링
 3. `seriesName` 키워드가 `caption`에 포함되는지 확인
 4. `extractEpisodeNumber(caption)` 으로 화수 추출 (`n화`, `n편`, `ep.n`, `#n`)
-5. 캡션에서 못 찾으면 → OCR 폴백 (앱: ML Kit 온디바이스, 서버: ocr.space)
+5. 캡션에서 못 찾으면 → OCR 폴백 (앱·서버 모두 ocr.space API)
 6. 새 화수 감지 시 → `hasNewEpisode: true` + 알림 전송
 
 ## 기능 3: 자동 확인
@@ -241,7 +258,7 @@ cd /Users/choeyunseong/프로젝트/toon-notifier-app
 npx expo start
 ```
 
-> Expo Go에서는 ML Kit 온디바이스 OCR 미지원 — OCR 테스트는 `expo-dev-client` 빌드 필요
+> OCR은 ocr.space API를 사용하므로 Expo Go에서도 동작함
 
 ---
 

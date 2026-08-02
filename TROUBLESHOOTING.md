@@ -415,3 +415,279 @@ if (remote.is_complete && !local.isComplete) {
 ```
 
 ---
+
+## #8 — captionIsComplete 오탐: 다른 시리즈 완결 포스트 감지
+
+**날짜:** 2026-07-21
+
+**증상:**
+
+전혀 다른 시리즈의 완결 포스트가 현재 시리즈의 새 에피소드로 감지됨. 관계없는 툰에 새 화수 알림이 오는 오탐.
+
+**원인:**
+
+`captionMatched` 조건에서 `captionIsComplete`가 시리즈 키워드 확인을 완전히 우회했음.
+
+```js
+// 문제 코드
+const captionMatched = captionIsComplete || keyWords.some((w) => caption.includes(w));
+// captionIsComplete=true이면 시리즈명 확인 없이 바로 통과
+```
+
+**해결 방법:**
+
+`captionIsComplete`도 반드시 시리즈 키워드(`hasAnySeriesWord`)가 함께 있어야 통과하도록 수정.
+
+```js
+const hasAnySeriesWord = allWords.some((w) => caption.includes(w));
+const captionMatched =
+  (captionIsComplete && hasAnySeriesWord) || matchCount >= minMatch;
+```
+
+---
+
+## #9 — ATS 오류: 온디바이스 OCR 이미지 다운로드 실패
+
+**날짜:** 2026-07-21
+
+**에러 메시지:**
+```
+URLSessionTask failed with error: The resource could not be loaded because 
+the App Transport Security policy requires the use of a secure connection.
+```
+
+**원인:**
+
+`NSAllowsArbitraryLoads`가 `false`로 설정되어 있어 Instagram CDN 이미지 URL에서 HTTP 요청이 차단됨. ML Kit 온디바이스 OCR은 이미지를 로컬에 다운로드한 후 처리하는데, 이 다운로드 단계에서 ATS 정책에 걸림.
+
+**해결 방법:**
+
+`ios/Toonify/Info.plist`에서 `NSAllowsArbitraryLoads`를 `true`로 변경.
+
+```xml
+<key>NSAppTransportSecurity</key>
+<dict>
+  <key>NSAllowsArbitraryLoads</key>
+  <true/>
+  <key>NSAllowsLocalNetworking</key>
+  <true/>
+</dict>
+```
+
+네이티브 파일 변경이므로 새 빌드 필요.
+
+---
+
+## #10 — 앱 OCR 엔진 교체: ML Kit 온디바이스 → ocr.space API
+
+**날짜:** 2026-08-03
+
+**배경:**
+
+ML Kit 온디바이스 OCR을 도입했으나 인스타툰 썸네일의 아트체/손글씨 폰트에서 인식률이 낮아 실용성 부족. 이미지 전처리(1080px 리사이즈), 신뢰도 필터링 등 개선을 시도했으나 근본적 한계 확인.
+
+**해결 방법:**
+
+서버(GitHub Actions)에서 이미 사용 중인 ocr.space API를 앱에도 적용.
+
+- 무료 티어: 월 25,000회 (등록 후)
+- OTA 배포 가능 (네이티브 모듈 불필요)
+- 기존 ML Kit 패키지는 바이너리에 잔류 → 다음 빌드 시 `npm uninstall` 후 제거 예정
+
+```js
+// src/services/ocr-service.js
+const params = new URLSearchParams({
+  url: imageUrl,
+  language: 'kor',
+  isOverlayRequired: 'false',
+  detectOrientation: 'true',
+  scale: 'true',
+  OCREngine: '2',
+});
+const res = await fetch(`https://api.ocr.space/parse/imageurl?${params}`, {
+  headers: { apikey: OCR_SPACE_KEY },
+});
+```
+
+---
+
+## #11 — ocrMatched 완결 단독 통과 오탐
+
+**날짜:** 2026-08-03
+
+**증상:**
+
+`[checkToon] ep=6 isComplete=true isNewEpisode=true` — 새 화가 아닌데 새로운 화로 인식됨.
+
+**원인:**
+
+`ocrMatched` 조건에서 `isCompleteEpisode(ocrText)` 단독으로 통과 가능했음. 이미지 어딘가에 "완결" 글자만 있어도 OCR 매칭을 통과하고, `ep=null`이면 `runningMaxEp+1`로 가상 화수가 배정됨.
+
+```js
+// 문제 코드
+const ocrMatched =
+  allWords.some((w) => ocrText.includes(w)) || isCompleteEpisode(ocrText);
+//                                           ↑ 시리즈 키워드 없어도 통과
+```
+
+**해결 방법:**
+
+`isCompleteEpisode` 단독 조건 제거. 시리즈 키워드 매칭만으로 판단.
+
+```js
+const ocrMatched = allWords.some((w) => ocrText.includes(w));
+```
+
+---
+
+## #12 — minMatch=0 오탐: keyWords 비어있을 때 모든 캡션 매칭
+
+**날짜:** 2026-08-03
+
+**증상:**
+
+`⚠️ minMatch=0 오탐가능(keyWords 비었음)` 로그 출력 후 captionMatched=true. 관계없는 포스트가 시리즈 포스트로 인식됨.
+
+**원인:**
+
+`seriesName`의 모든 단어가 2글자 미만이면 `keyWords=[]`, `minMatch=Math.min(2,0)=0`. 결과적으로 `matchCount(0) >= minMatch(0)` → 모든 캡션이 매칭됨.
+
+```js
+// 문제 코드
+const captionMatched =
+  (captionIsComplete && hasAnySeriesWord) || matchCount >= minMatch;
+// keyWords=[], minMatch=0 → 0 >= 0 → 항상 true
+```
+
+**해결 방법:**
+
+`keyWords.length > 0` 가드 추가.
+
+```js
+const captionMatched =
+  keyWords.length > 0 && matchCount >= minMatch;
+```
+
+---
+
+## #13 — 완결+시리즈단어 1개 오탐
+
+**날짜:** 2026-08-03
+
+**증상:**
+
+시리즈명에 "완"이 포함된 경우, 다른 시리즈 완결 포스트가 `완결+시리즈단어` 조건으로 통과됨.
+
+**원인:**
+
+완결 감지 시 `hasAnySeriesWord`(1개)만 있으면 `captionMatched=true`가 되어 일반 키워드 매칭보다 훨씬 느슨하게 동작.
+
+```js
+// 문제 코드
+const captionMatched =
+  keyWords.length > 0 &&
+  ((captionIsComplete && hasAnySeriesWord) || matchCount >= minMatch);
+// 완결이면 1개만 매칭돼도 통과
+```
+
+**해결 방법:**
+
+완결이든 아니든 `minMatch` 기준 동일 적용. `hasAnySeriesWord` 분기 제거.
+
+```js
+const captionMatched = keyWords.length > 0 && matchCount >= minMatch;
+// isCompleteEpisode는 캡션 매칭과 별개로 완결 여부 판단에만 활용
+```
+
+---
+
+## #14 — OCR/캡션 매칭 기준 불균형으로 OCR이 우회 경로가 되는 문제
+
+**날짜:** 2026-08-03
+
+**증상:**
+
+캡션에서 키워드 2개 필요로 막힌 포스트가 OCR에서는 1개만 있어도 통과됨. 같은 화로 반복 인식되는 오탐 발생.
+
+**원인:**
+
+캡션과 OCR의 매칭 기준이 달랐음.
+- 캡션: `keyWords` 중 `minMatch`(2)개 필요
+- OCR: `allWords` 중 1개만 있으면 통과 — 더 넓은 단어 목록 + 더 낮은 임계값
+
+```js
+// 문제 코드 — OCR이 더 느슨
+const ocrMatched = allWords.some((w) => ocrText.includes(w));
+```
+
+**해결 방법:**
+
+OCR도 캡션과 동일한 `keyWords` + `minMatch` 기준 적용. 단, OCR 결과는 토큰 분리 없이 `includes`로 검사 (조사 붙은 한국어 대응).
+
+```js
+const ocrMatchedWords = keyWords.filter((w) => ocrText.includes(w));
+const ocrMatched = ocrMatchedWords.length >= minMatch;
+```
+
+---
+
+## #15 — buildUnreadPosts가 checkToon보다 느슨한 기준으로 에피소드 추가
+
+**날짜:** 2026-08-03
+
+**증상:**
+
+"3편까지 나옴" 알림이 왔는데 앱 에피소드 목록에는 5편까지 추가되어 있음. 감지된 화수와 목록에 표시되는 화수가 불일치.
+
+**원인:**
+
+`checkToon`은 엄격한 `keyWords + minMatch` 기준으로 3편만 감지했지만, 에피소드 목록을 만드는 `buildUnreadPosts`는 수정되지 않은 느슨한 조건(`captionIsComplete || allWords.some(...)`)을 그대로 사용해서 더 많은 포스트를 매칭함.
+
+```js
+// buildUnreadPosts 문제 코드
+const matched = captionIsComplete || allWords.some((w) => cap.includes(w));
+// 완결 단독 통과 + 1개 단어 substring 매칭
+```
+
+**해결 방법:**
+
+`buildUnreadPosts`도 `checkToon`과 동일한 `keyWords + minMatch` 토큰 매칭 기준 적용.
+
+---
+
+## #16 — 앱·서버 매칭 로직 분리로 인한 버그 누적
+
+**날짜:** 2026-08-03
+
+**증상:**
+
+앱(`check-service.js`)에서 수정한 매칭 버그들(#11~#14)이 서버(`check-toons.js`)에는 그대로 남아있음. 서버는 구버전 로직으로 계속 동작하여 앱과 다른 결과를 냄.
+
+**원인:**
+
+앱과 서버가 동일한 매칭 로직을 각각 따로 작성하고 있었음. 한 쪽을 수정해도 다른 쪽이 자동으로 반영되지 않아 지속적으로 불일치 발생.
+
+**해결 방법:**
+
+공통 매칭 로직을 `src/utils/matchingUtils.js`로 추출 (CommonJS). 앱과 서버 모두 이 파일을 참조.
+
+```
+src/utils/matchingUtils.js  ← 단일 진실 공급원
+    ↓ import              ↓ require
+check-service.js        check-toons.js
+(앱)                    (서버)
+```
+
+```js
+// src/utils/matchingUtils.js
+function buildSeriesKeys(seriesName) { ... }  // keyWords, minMatch 추출
+function captionMatches(keyWords, minMatch, caption) { ... }  // 토큰 매칭
+function ocrMatches(keyWords, minMatch, text) { ... }  // 서브스트링 매칭
+module.exports = { buildSeriesKeys, captionMatches, ocrMatches };
+```
+
+**교훈:**
+
+같은 로직을 두 곳에 따로 작성하면 반드시 한 쪽이 뒤처진다. CLAUDE.md 규칙 8번으로 추가됨.
+
+---

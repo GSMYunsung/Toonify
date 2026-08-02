@@ -19,7 +19,7 @@ import { useTheme } from "../context/ThemeContext";
 import CardShape, { blobIndex } from "./CardShape";
 
 // ── ToonCard ─────────────────────────────────────────
-export default function ToonCard({ toon, onUpdate, onEdit, onMessage }) {
+export default function ToonCard({ toon, onUpdate, onMessage }) {
   const { theme } = useTheme();
   const swipeableRef = useRef(null);
   const [isChecking, setIsChecking] = useState(false);
@@ -154,7 +154,6 @@ export default function ToonCard({ toon, onUpdate, onEdit, onMessage }) {
           <TouchableOpacity
             activeOpacity={0.88}
             onPress={toggleExpand}
-            onLongPress={() => onEdit?.(toon)}
             style={st.header}
           >
             <View style={st.iconWrap}>

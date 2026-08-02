@@ -1,38 +1,78 @@
-import { File, Paths } from 'expo-file-system';
-import TextRecognition, { TextRecognitionScript } from '@react-native-ml-kit/text-recognition';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { OCR_SPACE_KEY } from '../../config';
 
-export async function extractTextFromImage(imageUrl) {
-  const tempUri = Paths.cache.uri + `ocr_temp_${Date.now()}.jpg`;
-  const tempFile = new File(tempUri);
+const OCR_CACHE_KEY = 'ocr_cache_v1';
+
+async function readCache() {
+  try {
+    const raw = await AsyncStorage.getItem(OCR_CACHE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+async function writeCache(cache) {
+  try {
+    await AsyncStorage.setItem(OCR_CACHE_KEY, JSON.stringify(cache));
+  } catch {}
+}
+
+export async function extractTextFromImage(imageUrl, postId) {
+  if (postId) {
+    const cache = await readCache();
+    if (cache[postId] !== undefined) {
+      console.log('[OCR] 캐시 히트 →', postId);
+      return cache[postId];
+    }
+  }
+
+  if (!OCR_SPACE_KEY) {
+    console.warn('[OCR] API 키 없음');
+    return '';
+  }
 
   try {
-    const response = await fetch(imageUrl);
-    if (!response.ok) return '';
-    const buffer = await response.arrayBuffer();
-    tempFile.write(new Uint8Array(buffer));
+    const params = new URLSearchParams({
+      url: imageUrl,
+      language: 'kor',
+      isOverlayRequired: 'false',
+      detectOrientation: 'true',
+      scale: 'true',
+      OCREngine: '2',
+    });
 
-    // KOREAN + LATIN 병렬 실행 — 한글은 KOREAN, 숫자/영문은 LATIN이 정확
-    const [krResult, laResult] = await Promise.all([
-      TextRecognition.recognize(tempFile.uri, TextRecognitionScript.KOREAN),
-      TextRecognition.recognize(tempFile.uri, TextRecognitionScript.LATIN),
-    ]);
+    const res = await fetch(`https://api.ocr.space/parse/imageurl?${params}`, {
+      headers: { apikey: OCR_SPACE_KEY },
+    });
 
-    const krText = krResult.text || '';
-    const laText = laResult.text || '';
+    if (!res.ok) {
+      console.warn('[OCR] 요청 실패:', res.status);
+      return '';
+    }
 
-    const krLines = new Set(krText.split('\n').map((l) => l.trim()).filter(Boolean));
-    const extra = laText.split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l && !krLines.has(l))
-      .join('\n');
+    const data = await res.json();
+    if (data.IsErroredOnProcessing) {
+      console.warn('[OCR] 처리 오류:', data.ErrorMessage);
+      return '';
+    }
 
-    const text = (krText + (extra ? '\n' + extra : '')).trim();
+    const text = (data.ParsedResults ?? [])
+      .map((r) => r.ParsedText ?? '')
+      .join('\n')
+      .trim();
+
     console.log('[OCR] 인식 결과:', text.slice(0, 120) || '(빈 텍스트)');
+
+    if (postId) {
+      const cache = await readCache();
+      cache[postId] = text;
+      await writeCache(cache);
+    }
+
     return text;
   } catch (e) {
-    console.warn('[OCR] 온디바이스 실패:', e.message);
+    console.warn('[OCR] 실패:', e.message);
     return '';
-  } finally {
-    try { tempFile.delete(); } catch {}
   }
 }

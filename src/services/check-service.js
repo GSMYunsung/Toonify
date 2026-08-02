@@ -1,23 +1,28 @@
 import { fetchLatestPosts } from "./instagram-api";
-import {
-  extractEpisodeNumber,
-  extractEpisodeNumberFromOCR,
-  isCompleteEpisode,
-} from "../hooks/useKeywordDetector";
 import { extractTextFromImage } from "./ocr-service";
 import { getToons, updateToon } from "./toon-store";
 import { sendLocalNotification } from "./notifications";
 import { supabase } from "./supabase";
+import {
+  buildSeriesKeys,
+  captionMatches,
+  ocrMatches,
+  isSeriesAbandoned,
+  isCompleteEpisode,
+  extractEpisodeNumber,
+  extractEpisodeNumberFromOCR,
+} from "../utils/matchingUtils";
 
 export function buildEpisodeHistory(toon, allPosts) {
   const existing = {};
-  for (const h of (toon.episodeHistory || [])) {
+  for (const h of toon.episodeHistory || []) {
     existing[h.episode] = h;
   }
-  const allWords = toon.seriesName.split(/\s+/).filter((w) => w.length >= 2);
+  const { keyWords, minMatch } = buildSeriesKeys(toon.seriesName);
   for (const post of allPosts) {
-    const cap = post.caption || '';
-    if (!allWords.some((w) => cap.includes(w))) continue;
+    const cap = post.caption || "";
+    const { ok } = captionMatches(keyWords, minMatch, cap);
+    if (!ok) continue;
     const ep = extractEpisodeNumber(cap);
     if (ep !== null && !existing[ep]) {
       existing[ep] = { episode: ep, url: post.url };
@@ -28,7 +33,7 @@ export function buildEpisodeHistory(toon, allPosts) {
 
 export function buildUnreadPosts(toon, allPosts) {
   const readEp = toon.readEpisode || 0;
-  const allWords = toon.seriesName.split(/\s+/).filter((w) => w.length >= 2);
+  const { keyWords, minMatch } = buildSeriesKeys(toon.seriesName);
   const seen = new Set();
   const result = [];
   let maxFoundEp = toon.lastEpisode || 0;
@@ -36,11 +41,11 @@ export function buildUnreadPosts(toon, allPosts) {
   const sorted = [...allPosts].sort((a, b) => a.timestamp - b.timestamp);
 
   for (const post of sorted) {
-    const cap = post.caption || '';
-    const captionIsComplete = isCompleteEpisode(cap);
-    const matched = captionIsComplete || allWords.some((w) => cap.includes(w));
-    if (!matched) continue;
+    const cap = post.caption || "";
+    const { ok } = captionMatches(keyWords, minMatch, cap);
+    if (!ok) continue;
 
+    const captionIsComplete = isCompleteEpisode(cap);
     let ep = extractEpisodeNumber(cap);
     if (ep === null && captionIsComplete) ep = maxFoundEp + 1;
     if (ep !== null && ep > maxFoundEp) maxFoundEp = ep;
@@ -58,57 +63,49 @@ export async function checkToon(toonInput) {
   const stored = await getToons();
   const toon = stored.find((t) => t.id === toonInput.id) ?? toonInput;
 
-  const ocr = (imageUrl) => extractTextFromImage(imageUrl);
-
   const allPosts = await fetchLatestPosts(toon.username);
-  const allPostsOldestFirst = [...allPosts].sort((a, b) => a.timestamp - b.timestamp);
-  const posts = allPostsOldestFirst;
+  const posts = [...allPosts].sort((a, b) => b.timestamp - a.timestamp);
 
-  console.log(`[checkToon] @${toon.username} — 검사대상 ${posts.length}개 (오래된 순)`);
+  console.log(`[checkToon] @${toon.username} — 검사대상 ${posts.length}개 (최신 순)`);
 
+  const isAbandoned = isSeriesAbandoned(allPosts);
+  if (isAbandoned) console.log(`[checkToon] 최신 포스트 3주 이상 경과`);
+
+  const { allWords, keyWords, minMatch } = buildSeriesKeys(toon.seriesName);
   const collected = [];
   let runningMaxEp = toon.lastEpisode || 0;
 
   for (const post of posts) {
     const caption = post.caption || "";
-    const allWords = toon.seriesName.split(/\s+/).filter((w) => w.length >= 2);
-    const words3up = allWords.filter((w) => w.length >= 3);
-    const keyWords = words3up.length >= 1
-      ? words3up
-      : [...allWords].sort((a, b) => b.length - a.length).slice(0, 2);
-    const captionTokens = new Set(
-      caption.split(/\s+/).map((t) => t.replace(/^[^가-힣a-zA-Z0-9]+|[^가-힣a-zA-Z0-9]+$/g, ""))
-    );
-    const minMatch = Math.min(2, keyWords.length);
-    const matchThreshold = Math.min(3, keyWords.length);
-    const matchCount = keyWords.filter((w) => captionTokens.has(w)).length;
+    const { ok: captionMatched, matched: matchedWords } = captionMatches(keyWords, minMatch, caption);
     const captionIsComplete = isCompleteEpisode(caption);
-    const captionMatched = captionIsComplete || matchCount >= minMatch;
 
     let analysisText = caption;
 
     if (!captionMatched && !toon.isComplete) {
-      console.log(`[checkToon] 캡션에 키워드 부족(${matchCount}/${minMatch}) → OCR 시도`);
-      const ocrText = await ocr(post.thumbnailUrl);
-      const ocrMatched = allWords.some((w) => ocrText.includes(w)) || isCompleteEpisode(ocrText);
-      if (!ocrMatched) {
-        console.log(`[checkToon] OCR에도 키워드 없음 → 건너뜀`);
+      console.log(`[checkToon] 캡션 키워드 부족(${matchedWords.length}/${minMatch}) → OCR 시도`);
+      const ocrText = await extractTextFromImage(post.thumbnailUrl, post.id);
+      const { ok: ocrOk, matched: ocrMatchedWords } = ocrMatches(keyWords, minMatch, ocrText);
+      if (!ocrOk) {
+        console.log(`[checkToon] OCR 키워드 부족(${ocrMatchedWords.length}/${minMatch}) → 건너뜀`);
         continue;
       }
       analysisText = ocrText;
-      console.log(`[checkToon] OCR에서 키워드 확인됨`);
+      console.log(`[checkToon] OCR 통과 — 매칭단어: (${ocrMatchedWords.join(', ')}) | OCR결과: "${ocrText.slice(0, 80)}"`);
     } else if (!captionMatched) {
       continue;
+    } else {
+      console.log(`[checkToon] 캡션 매칭 — 키워드(${matchedWords.join(', ')})${captionIsComplete ? ' +완결' : ''} | caption: "${caption.slice(0, 60)}"`);
     }
 
-    const isOCR = analysisText !== caption;
-    let ep = isOCR
+    const isViaOCR = analysisText !== caption;
+    let ep = isViaOCR
       ? extractEpisodeNumberFromOCR(analysisText)
       : extractEpisodeNumber(analysisText);
 
-    if (captionMatched && ep === null && !toon.isComplete) {
+    if (!isViaOCR && ep === null && !toon.isComplete) {
       console.log(`[checkToon] 캡션에 화수 없음 → OCR 폴백 시도`);
-      const ocrText = await ocr(post.thumbnailUrl);
+      const ocrText = await extractTextFromImage(post.thumbnailUrl, post.id);
       const ocrEp = extractEpisodeNumberFromOCR(ocrText);
       if (ocrEp !== null) {
         ep = ocrEp;
@@ -117,7 +114,6 @@ export async function checkToon(toonInput) {
     }
 
     const isComplete = isCompleteEpisode(analysisText);
-
     if (isComplete && ep === null) {
       ep = runningMaxEp + 1;
       console.log(`[checkToon] 완결 감지 → 가상 화수: ${ep}`);
@@ -125,9 +121,18 @@ export async function checkToon(toonInput) {
 
     if (ep !== null && ep > runningMaxEp) runningMaxEp = ep;
 
+    if (ep !== null && ep <= (toon.readEpisode || 0)) {
+      console.log(`[checkToon] ep=${ep} <= readEpisode=${toon.readEpisode || 0} → 중단`);
+      break;
+    }
+
     const alreadyCollected = collected.some((c) => c.ep === ep);
     const alreadyInUnread = (toon.unreadPosts || []).some((p) => p.episode === ep);
-    const isNewEpisode = ep !== null && ep > (toon.readEpisode || 0) && !alreadyCollected && !alreadyInUnread;
+    const isNewEpisode =
+      ep !== null &&
+      ep > (toon.readEpisode || 0) &&
+      !alreadyCollected &&
+      !alreadyInUnread;
 
     console.log(`[checkToon] ep=${ep} isComplete=${isComplete} isNewEpisode=${isNewEpisode}`);
 
@@ -138,8 +143,8 @@ export async function checkToon(toonInput) {
 
   if (collected.length > 0) {
     const maxEp = runningMaxEp;
-    const lastEntry = collected[collected.length - 1];
-    const anyComplete = collected.some((e) => e.isComplete);
+    const lastEntry = collected[0];
+    const anyComplete = collected.some((e) => e.isComplete) || isAbandoned;
 
     let episodeHistory = buildEpisodeHistory(toon, allPosts);
     for (const { ep, url } of collected) {
@@ -173,15 +178,19 @@ export async function checkToon(toonInput) {
     });
 
     if (!toon.hasNewEpisode) {
-      supabase.from('toons').update({
-        has_new_episode: true,
-        last_episode: maxEp,
-        last_post_url: lastEntry.post.url,
-        unread_posts: unreadPosts.map((p) => ({ episode: p.episode, url: p.url })),
-        updated_at: new Date().toISOString(),
-      }).eq('id', toon.id).then(({ error }) => {
-        if (error) console.warn('[checkToon] Supabase 업데이트 실패:', error.message);
-      });
+      supabase
+        .from("toons")
+        .update({
+          has_new_episode: true,
+          last_episode: maxEp,
+          last_post_url: lastEntry.post.url,
+          unread_posts: unreadPosts.map((p) => ({ episode: p.episode, url: p.url })),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", toon.id)
+        .then(({ error }) => {
+          if (error) console.warn("[checkToon] Supabase 업데이트 실패:", error.message);
+        });
 
       await sendLocalNotification(
         toon.seriesName,
@@ -195,11 +204,10 @@ export async function checkToon(toonInput) {
 
   const historyUpdates = buildEpisodeHistory(toon, allPosts);
   const historyGrew = historyUpdates.length > (toon.episodeHistory || []).length;
-  const newestPost = allPostsOldestFirst[allPostsOldestFirst.length - 1];
+  const newestPost = posts[posts.length - 1];
 
-  const allSeriesWords = toon.seriesName.split(/\s+/).filter((w) => w.length >= 2);
   const anySeriesPost = allPosts.some((p) =>
-    allSeriesWords.some((w) => (p.caption || '').includes(w))
+    allWords.some((w) => (p.caption || "").includes(w)),
   );
   const shouldBeUndetectable = !anySeriesPost && allPosts.length > 0;
   if (shouldBeUndetectable !== !!toon.undetectable) {
@@ -209,7 +217,11 @@ export async function checkToon(toonInput) {
   await updateToon(toon.id, {
     ...(newestPost && !toon.lastPostId ? { lastPostId: newestPost.id } : {}),
     ...(historyGrew ? { episodeHistory: historyUpdates } : {}),
+    ...(isAbandoned && !toon.isComplete ? { isComplete: true } : {}),
   });
+  if (isAbandoned && !toon.isComplete) {
+    console.log(`[checkToon] @${toon.username} 3주 이상 업데이트 없음 → 완결 처리`);
+  }
   return { found: false, undetectable: shouldBeUndetectable };
 }
 

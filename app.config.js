@@ -3,7 +3,7 @@ module.exports = {
   expo: {
     name: "Toonify",
     slug: "toon-notifier-app",
-    version: "1.0.0",
+    version: "1.0.1",
     orientation: "portrait",
     runtimeVersion: {
       policy: "appVersion",
@@ -21,7 +21,7 @@ module.exports = {
       backgroundColor: "#ffffff",
     },
     ios: {
-      supportsTablet: true,
+      supportsTablet: false,
       bundleIdentifier: "com.choeyunseong.toonify",
       appleTeamId: "K7MR8BV2Q4",
       infoPlist: {

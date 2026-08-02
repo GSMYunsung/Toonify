@@ -13,7 +13,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import { addToon, updateToonInfo } from "../services/toon-service";
+import { addToon } from "../services/toon-service";
 import * as Clipboard from "expo-clipboard";
 import { fetchPostByUrl } from "../services/instagram-api";
 import { extractTextFromImage } from "../services/ocr-service";
@@ -21,13 +21,12 @@ import {
   extractEpisodeNumber,
   extractEpisodeNumberFromOCR,
   extractSeriesName,
-} from "../hooks/useKeywordDetector";
+} from "../utils/matchingUtils";
 import { useTheme } from "../context/ThemeContext";
 import { FONTS } from "../theme";
 
-export default function AddToonModal({ visible, onClose, onAdded, onUpdate, editToon }) {
+export default function AddToonModal({ visible, onClose, onAdded }) {
   const { theme } = useTheme();
-  const isEdit = !!editToon;
 
   const [username, setUsername] = useState("");
   const [seriesName, setSeriesName] = useState("");
@@ -45,13 +44,9 @@ export default function AddToonModal({ visible, onClose, onAdded, onUpdate, edit
   const sheetStartY = useRef(0);
 
   useEffect(() => {
-    if (editToon) {
-      setUsername(editToon.username || "");
-      setSeriesName(editToon.seriesName || "");
-      setLastEpisode(String(editToon.readEpisode || editToon.lastEpisode || ""));
-    } else {
-      setUsername(""); setSeriesName(""); setLastEpisode("");
-    }
+    setUsername("");
+    setSeriesName("");
+    setLastEpisode("");
     setLinkUrl("");
     setImported(false);
     setImporting(false);
@@ -59,7 +54,7 @@ export default function AddToonModal({ visible, onClose, onAdded, onUpdate, edit
     setOcrRunning(false);
     setOcrDetected(false);
     sheetY.setValue(0);
-  }, [visible, editToon]);
+  }, [visible]);
 
   const handleImportFromUrl = async (url) => {
     if (!url || importing) return;
@@ -78,7 +73,10 @@ export default function AddToonModal({ visible, onClose, onAdded, onUpdate, edit
         setOcrRunning(false);
         if (ocrText) {
           const ocrEp = extractEpisodeNumberFromOCR(ocrText);
-          if (ocrEp !== null) { ep = ocrEp; setOcrDetected(true); }
+          if (ocrEp !== null) {
+            ep = ocrEp;
+            setOcrDetected(true);
+          }
           name = extractSeriesName(ocrText) || name;
         }
       }
@@ -107,23 +105,16 @@ export default function AddToonModal({ visible, onClose, onAdded, onUpdate, edit
     const clean = username.trim().replace(/^@+/, "");
     if (!clean || !seriesName.trim()) return;
 
-    if (isEdit) {
-      await updateToonInfo(editToon.id, {
-        seriesName: seriesName.trim(),
-        lastEpisode: parseInt(lastEpisode) || 0,
-      });
-      onAdded();
-    } else {
-      const ep = parseInt(lastEpisode) || 0;
-      const initialHistory = (ep > 0 && linkUrl) ? [{ episode: ep, url: linkUrl.trim() }] : [];
-      await addToon({
-        username: clean,
-        seriesName: seriesName.trim(),
-        lastEpisode: ep,
-        episodeHistory: initialHistory,
-      });
-      onAdded();
-    }
+    const ep = parseInt(lastEpisode) || 0;
+    const initialHistory =
+      ep > 0 && linkUrl ? [{ episode: ep, url: linkUrl.trim() }] : [];
+    await addToon({
+      username: clean,
+      seriesName: seriesName.trim(),
+      lastEpisode: ep,
+      episodeHistory: initialHistory,
+    });
+    onAdded();
     onClose();
   };
 
@@ -142,25 +133,40 @@ export default function AddToonModal({ visible, onClose, onAdded, onUpdate, edit
   const onHandlePointerUp = () => {
     sheetDragging.current = false;
     if (sheetCurrentY.current > 90) {
-      Animated.timing(sheetY, { toValue: 600, duration: 180, useNativeDriver: true }).start(onClose);
+      Animated.timing(sheetY, {
+        toValue: 600,
+        duration: 180,
+        useNativeDriver: true,
+      }).start(onClose);
     } else {
       Animated.spring(sheetY, { toValue: 0, useNativeDriver: true }).start();
     }
     sheetCurrentY.current = 0;
   };
 
-  const saveDisabled = !username.trim() || !seriesName.trim() || (!isEdit && !imported);
+  const saveDisabled = !username.trim() || !seriesName.trim() || !imported;
 
   const st = s(theme);
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <TouchableOpacity style={st.backdrop} activeOpacity={1} onPress={onClose} />
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity
+        style={st.backdrop}
+        activeOpacity={1}
+        onPress={onClose}
+      />
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={st.keyboardView}
       >
-        <Animated.View style={[st.sheet, { transform: [{ translateY: sheetY }] }]}>
+        <Animated.View
+          style={[st.sheet, { transform: [{ translateY: sheetY }] }]}
+        >
           {/* Drag handle */}
           <View
             style={st.dragArea}
@@ -174,7 +180,7 @@ export default function AddToonModal({ visible, onClose, onAdded, onUpdate, edit
 
           {/* Title row */}
           <View style={st.titleRow}>
-            <Text style={st.title}>{isEdit ? "툰 수정" : "툰 추가"}</Text>
+            <Text style={st.title}>툰 추가</Text>
             <TouchableOpacity onPress={onClose} style={st.closeBtn}>
               <Feather name="x" size={20} color={theme.muted} />
             </TouchableOpacity>
@@ -184,11 +190,14 @@ export default function AddToonModal({ visible, onClose, onAdded, onUpdate, edit
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {/* Link paste button (add mode only) */}
-            {!isEdit && (
-              <>
-                {!imported && !importing && (
-                  <TouchableOpacity style={st.pasteBtn} onPress={handlePasteFromClipboard} activeOpacity={0.75}>
+            {/* Link paste button */}
+            <>
+              {!imported && !importing && (
+                  <TouchableOpacity
+                    style={st.pasteBtn}
+                    onPress={handlePasteFromClipboard}
+                    activeOpacity={0.75}
+                  >
                     <Feather name="clipboard" size={15} color={theme.ctaText} />
                     <Text style={st.pasteBtnText}>링크 붙여넣기</Text>
                   </TouchableOpacity>
@@ -197,18 +206,32 @@ export default function AddToonModal({ visible, onClose, onAdded, onUpdate, edit
                   <View style={st.loadingRow}>
                     <ActivityIndicator size="small" color={theme.accent} />
                     <Text style={st.loadingText}>
-                      {ocrRunning ? "이미지에서 화수 읽는 중..." : "게시물 정보 불러오는 중..."}
+                      {ocrRunning
+                        ? "이미지에서 화수 읽는 중..."
+                        : "게시물 정보 불러오는 중..."}
                     </Text>
                   </View>
                 )}
                 {imported && !importing && (
                   <View style={st.importedRow}>
-                    <Feather name="check-circle" size={13} color={theme.tagCompleteColor} />
-                    <Text style={st.importedText} numberOfLines={1}>{linkUrl}</Text>
-                    <TouchableOpacity onPress={() => {
-                      setLinkUrl(""); setImported(false); setImportError("");
-                      setUsername(""); setSeriesName(""); setLastEpisode("");
-                    }}>
+                    <Feather
+                      name="check-circle"
+                      size={13}
+                      color={theme.tagCompleteColor}
+                    />
+                    <Text style={st.importedText} numberOfLines={1}>
+                      {linkUrl}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setLinkUrl("");
+                        setImported(false);
+                        setImportError("");
+                        setUsername("");
+                        setSeriesName("");
+                        setLastEpisode("");
+                      }}
+                    >
                       <Feather name="x" size={14} color={theme.muted} />
                     </TouchableOpacity>
                   </View>
@@ -216,26 +239,23 @@ export default function AddToonModal({ visible, onClose, onAdded, onUpdate, edit
                 {importError ? (
                   <Text style={st.errorText}>{importError}</Text>
                 ) : null}
-              </>
-            )}
+            </>
 
             {/* Account */}
             <View style={st.fieldLabelRow}>
-              <Text style={st.label}>
-                {isEdit ? (
-                  <>계정명 <Feather name="lock" size={10} color={theme.muted} /></>
-                ) : "계정명"}
-              </Text>
+              <Text style={st.label}>계정명</Text>
             </View>
             <TextInput
-              style={[st.input, (!imported || importing || isEdit) && st.inputLocked]}
+              style={[st.input, (!imported || importing) && st.inputLocked]}
               value={username}
               onChangeText={setUsername}
-              placeholder={imported ? "@instagram_id" : "링크를 먼저 붙여넣어 주세요"}
+              placeholder={
+                imported ? "@instagram_id" : "링크를 먼저 붙여넣어 주세요"
+              }
               placeholderTextColor={theme.muted}
               autoCapitalize="none"
               autoCorrect={false}
-              editable={imported && !isEdit && !importing}
+              editable={imported && !importing}
             />
 
             {/* Series name */}
@@ -246,10 +266,15 @@ export default function AddToonModal({ visible, onClose, onAdded, onUpdate, edit
               style={[st.input, (!imported || importing) && st.inputLocked]}
               value={seriesName}
               onChangeText={setSeriesName}
-              placeholder={imported ? "예: 오늘의 하루" : "링크를 먼저 붙여넣어 주세요"}
+              placeholder={
+                imported ? "예: 오늘의 하루" : "링크를 먼저 붙여넣어 주세요"
+              }
               placeholderTextColor={theme.muted}
               editable={imported && !importing}
             />
+            {imported && (
+              <Text style={st.hintText}>자동 인식 결과예요. 틀렸다면 직접 수정해 주세요.</Text>
+            )}
 
             {/* Episode */}
             <View style={st.fieldLabelRow}>
@@ -261,14 +286,23 @@ export default function AddToonModal({ visible, onClose, onAdded, onUpdate, edit
               )}
             </View>
             <TextInput
-              style={[st.input, (!imported || importing || ocrRunning) && st.inputLocked]}
+              style={[
+                st.input,
+                (!imported || importing || ocrRunning) && st.inputLocked,
+              ]}
               value={lastEpisode}
-              onChangeText={(v) => { setLastEpisode(v); setOcrDetected(false); }}
+              onChangeText={(v) => {
+                setLastEpisode(v);
+                setOcrDetected(false);
+              }}
               placeholder={imported ? "예: 24" : "링크를 먼저 붙여넣어 주세요"}
               placeholderTextColor={theme.muted}
               keyboardType="number-pad"
               editable={imported && !importing && !ocrRunning}
             />
+            {imported && (
+              <Text style={st.hintText}>내가 마지막으로 본 화수를 입력해 주세요. 다르게 등록하면 에피소드 목록이 틀어질 수 있어요.</Text>
+            )}
 
             {/* Buttons */}
             <View style={st.btnRow}>
@@ -280,9 +314,13 @@ export default function AddToonModal({ visible, onClose, onAdded, onUpdate, edit
                 onPress={handleSave}
                 disabled={saveDisabled}
               >
-                <Text style={st.saveText}>{isEdit ? "저장" : "추가"}</Text>
+                <Text style={st.saveText}>추가</Text>
                 <View style={st.saveChip}>
-                  <Feather name="arrow-right" size={12} color={theme.ctaChipColor} />
+                  <Feather
+                    name="arrow-right"
+                    size={12}
+                    color={theme.ctaChipColor}
+                  />
                 </View>
               </TouchableOpacity>
             </View>
@@ -464,6 +502,14 @@ const s = (theme) =>
       marginBottom: 14,
     },
     inputLocked: { opacity: 0.45 },
+    hintText: {
+      fontSize: 11.5,
+      color: theme.muted,
+      marginTop: -10,
+      marginBottom: 14,
+      paddingHorizontal: 4,
+      lineHeight: 17,
+    },
 
     btnRow: { flexDirection: "row", gap: 10, marginTop: 4 },
     cancelBtn: {

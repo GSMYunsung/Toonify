@@ -3,12 +3,7 @@
  * 실행: node scripts/test-check-toons.js
  */
 
-// ─── 검증 대상 함수 (check-toons.js와 동일) ──────────────────────
-function filterNewPosts(posts, lastPostId) {
-  if (!lastPostId) return posts;
-  const lastSeenIdx = posts.findIndex(p => p.id === lastPostId);
-  return lastSeenIdx === -1 ? posts : posts.slice(lastSeenIdx + 1);
-}
+const { filterNewPosts } = require('../src/utils/matchingUtils');
 
 // ─── 테스트 유틸 ─────────────────────────────────────────────────
 let passed = 0;

@@ -9,6 +9,7 @@ import {
   Animated,
   ActivityIndicator,
   AppState,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -40,7 +41,6 @@ export default function HomeScreen() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
-  const [editingToon, setEditingToon] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [statusText, setStatusText] = useState("");
@@ -192,6 +192,18 @@ export default function HomeScreen() {
         <View>
           <View style={s.titleRow}>
             <Text style={s.title}>Toonify</Text>
+            <TouchableOpacity
+              onPress={() =>
+                Alert.alert(
+                  "알림 감지 방식 안내",
+                  "• 최신 게시물 최대 12개만 검사해요\n\n• 캡션에 화수가 없으면 이미지 인식(OCR)을 시도하지만, AI 정확도 한계로 인식이 안 될 수 있어요\n\n• 화수 인식이 어려운 경우 ⚠️ 직접 확인 필요 표시가 붙어요",
+                  [{ text: "확인" }]
+                )
+              }
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+            >
+              <Feather name="info" size={14} color={theme.muted} />
+            </TouchableOpacity>
             {newCount > 0 && (
               <View style={s.countBadge}>
                 <Text style={s.countBadgeText}>{newCount}</Text>
@@ -233,7 +245,7 @@ export default function HomeScreen() {
           sections={sections}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <ToonCard toon={item} onUpdate={loadToons} onEdit={setEditingToon} onMessage={showToast} />
+            <ToonCard toon={item} onUpdate={loadToons} onMessage={showToast} />
           )}
           renderSectionHeader={({ section: { title, count } }) => (
             <View style={s.sectionHeader}>
@@ -274,15 +286,6 @@ export default function HomeScreen() {
           showToast("새로운 툰을 추가했어요");
         }}
         onUpdate={loadToons}
-      />
-      <AddToonModal
-        visible={editingToon !== null}
-        editToon={editingToon}
-        onClose={() => setEditingToon(null)}
-        onAdded={() => {
-          loadToons();
-          showToast("수정 내용을 저장했어요");
-        }}
       />
     </SafeAreaView>
   );

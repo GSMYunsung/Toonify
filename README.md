@@ -21,7 +21,7 @@
 
 | 문제 | 해결 |
 | ---- | ---- |
-| 새 편을 놓치지 않으려면 직접 계정을 방문해야 함 | GitHub Actions가 1시간마다 자동으로 체크해 알림 전송 |
+| 새 편을 놓치지 않으려면 직접 계정을 방문해야 함 | GitHub Actions가 3시간마다 자동으로 체크해 알림 전송 |
 | 인스타그램 일반 알림에 섞여 툰 업데이트를 구분하기 어려움 | 시리즈 이름 키워드 매칭으로 인스타툰 게시물만 필터링 |
 | 화수가 캡션에 없고 이미지에만 적혀있는 경우 감지 불가 | OCR로 이미지에서 화수 직접 인식 |
 | 몇 화까지 읽었는지 기억하기 어려움 | 읽음 처리 기능으로 진도 관리 |
@@ -33,16 +33,15 @@
 | 항목        | 내용                       |
 | ----------- | -------------------------- |
 | 플랫폼      | React Native (Expo SDK 54) |
-| 지원 기기   | Android (iOS는 EAS 빌드 필요) |
-| 테스트 환경 | Expo Go                    |
-| 버전        | 1.0.0                      |
+| 지원 기기   | iOS / Android              |
+| 버전        | 1.0.1                      |
 
 ---
 
 ## 서비스 구조
 
 ```
-📱 앱 (Expo Go)
+📱 앱 (Expo)
   │  앱 실행 시 Expo push token → Supabase 저장
   │  툰 추가/삭제/읽음 처리 → Supabase 동기화
   ▼
@@ -50,7 +49,7 @@
   │  toons 테이블: 등록된 툰 목록
   │  push_tokens 테이블: 디바이스 푸시 토큰
   ▼
-⚙️ GitHub Actions (1시간마다 자동 실행)
+⚙️ GitHub Actions (3시간마다 자동 실행)
   │  Supabase에서 툰 목록 읽기
   │  인스타 API로 새 편 확인
   │  새 편 발견 시 Expo Push API로 알림 전송
@@ -62,18 +61,20 @@
 
 ## 기능 요약
 
-- 인스타툰 계정 등록 / 수정 / 삭제 (스와이프 삭제, 롱프레스 수정)
-- 캡션 키워드 매칭으로 새 에피소드 자동 감지 — 12개 게시물 전부 스캔, 누락 없이 수집
-- 이미지 OCR을 통한 화수 인식 (캡션에 화수가 없을 때, Engine 3)
-- OCR 한도 초과(429) 2회 감지 시 해당 새로고침 플로우 자동 중단
-- 앱 내 2시간마다 자동 체크 + 당겨서 수동 새로고침
+- 인스타툰 계정 등록 / 삭제 (스와이프 삭제)
+- 캡션 키워드 매칭으로 새 에피소드 자동 감지 — 최신 12개 게시물 최신순 검사
+- 이미 읽은 화수 도달 시 즉시 중단 (OCR 호출 최소화)
+- 이미지 OCR을 통한 화수 인식 (캡션에 화수가 없을 때) — ocr.space API (앱·서버 공통)
+- OCR 결과 AsyncStorage 캐싱 (post.id 기반 — 동일 포스트 재호출 방지)
+- 3주 이상 포스트 없으면 완결로 자동 처리
+- 당겨서 수동 새로고침 (`RefreshControl`) → `checkAllToons`
 - 새 에피소드 복수 발견 시 `3화, 4화가 추가되었어요` 형식 알림
-- 카드 탭 → 에피소드 목록 아코디언 펼치기 (등록화 + 신규화 모두 표시)
+- 카드 탭 → 에피소드 목록 아코디언 펼치기 (읽은 화 + 신규화 모두 표시)
 - 에피소드 탭에서 화수 선택 → 해당 인스타 게시물로 바로 이동
 - 읽음 처리 시 `readEpisode` 자동 진행
-- 직접 확인 뱃지 — 최신 12개 안에 시리즈 게시물 없을 때 표시
+- 직접 확인 배지 — 최신 12개 안에 시리즈 게시물 없을 때 표시
 - 툰 추가: 링크 붙여넣기 → 계정명/시리즈명/화수 자동 채움 (링크 먼저 필수)
-- OCR 체크 중 스와이프 삭제 차단
+- 타이틀 옆 ⓘ 버튼 → 감지 방식 안내 팝업
 - 라이트 / 다크 모드 (시스템 기본값 + 수동 전환)
 
 ---
@@ -111,18 +112,16 @@
 
 ### 2. OCR.space — 이미지 텍스트 인식
 
-| 항목       | 내용                                                     |
-| ---------- | -------------------------------------------------------- |
-| 용도       | 캡션에 화수가 없을 때 게시물 이미지에서 텍스트 추출      |
-| 엔드포인트 | `GET https://api.ocr.space/parse/imageurl`               |
-| 인증       | `apikey` 쿼리 파라미터                                   |
-| 설정       | `language=kor`, `OCREngine=3`, `isOverlayRequired=false` |
-| 무료 한도  | 25,000회 / 월                                            |
-| 사용 파일  | `src/services/ocr-service.js`                            |
+| 항목       | 내용                                                       |
+| ---------- | ---------------------------------------------------------- |
+| 용도       | 캡션에 화수가 없을 때 게시물 이미지에서 텍스트 추출        |
+| 엔드포인트 | `GET https://api.ocr.space/parse/imageurl`                 |
+| 인증       | `apikey` 쿼리 파라미터                                     |
+| 설정       | `language=kor`, `OCREngine=2`, `isOverlayRequired=false`   |
+| 무료 한도  | 25,000회 / 월                                              |
+| 사용 파일  | `src/services/ocr-service.js`, `scripts/check-toons.js`   |
 
-> **Engine 3** 선택 이유: 한국어 웹툰 이미지 내 숫자·스타일 폰트 인식률 최적
->
-> 429 또는 quota 초과 응답이 2회 이상 발생하면 해당 새로고침 사이클 전체를 중단해 불필요한 API 소모를 방지함
+> 앱과 서버 모두 동일한 ocr.space API를 사용하며, 앱에서는 `post.id` 기반 AsyncStorage 캐시를 통해 동일 포스트에 대한 반복 호출을 방지한다.
 
 ---
 
@@ -136,26 +135,26 @@
 
 ### 4. Expo Push API — 푸시 알림 전송
 
-| 항목      | 내용                                       |
-| --------- | ------------------------------------------ |
-| 용도      | GitHub Actions에서 디바이스로 알림 전송    |
+| 항목       | 내용                                        |
+| ---------- | ------------------------------------------- |
+| 용도       | GitHub Actions에서 디바이스로 알림 전송     |
 | 엔드포인트 | `POST https://exp.host/--/api/v2/push/send` |
-| 인증      | 불필요 (Expo 토큰 기반)                    |
-| 비용      | 무료                                       |
+| 인증       | 불필요 (Expo 토큰 기반)                     |
+| 비용       | 무료                                        |
 
 ---
 
 ## 기술 스택
 
-| 분류                | 라이브러리 / 서비스                                   |
-| ------------------- | ----------------------------------------------------- |
-| 프레임워크          | React Native + Expo SDK 54                            |
-| 로컬 저장소         | `@react-native-async-storage/async-storage`           |
-| 온라인 DB           | Supabase (`@supabase/supabase-js`)                    |
-| 푸시 알림           | `expo-notifications` + Expo Push API                  |
-| 배치 실행           | GitHub Actions (1시간 인터벌)                         |
-| 제스처              | `react-native-gesture-handler`                        |
-| 인스타그램 스크래핑 | [hasdata API](https://hasdata.com)                    |
+| 분류                | 라이브러리 / 서비스                                    |
+| ------------------- | ------------------------------------------------------ |
+| 프레임워크          | React Native + Expo SDK 54                             |
+| 로컬 저장소         | `@react-native-async-storage/async-storage`            |
+| 온라인 DB           | Supabase (`@supabase/supabase-js`)                     |
+| 푸시 알림           | `expo-notifications` + Expo Push API                   |
+| 배치 실행           | GitHub Actions (3시간 인터벌)                          |
+| 제스처              | `react-native-gesture-handler`                         |
+| 인스타그램 스크래핑 | [hasdata API](https://hasdata.com)                     |
 | 이미지 OCR          | [OCR.space API](https://ocr.space) (Engine 2, 한국어) |
 
 ---
@@ -167,29 +166,27 @@ cd /Users/choeyunseong/프로젝트/toon-notifier-app
 npx expo start
 ```
 
-Expo Go 앱으로 QR 코드 스캔 → 즉시 폰에서 실행
+### API 키 설정 (`.env.local`)
 
-### API 키 설정 (`config.js`)
-
-```js
-export const HASDATA_KEY = "YOUR_HASDATA_KEY";
-export const OCR_SPACE_KEY = "YOUR_OCR_SPACE_KEY";
-export const SUPABASE_URL = "YOUR_SUPABASE_URL";
-export const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+```
+EXPO_PUBLIC_HASDATA_KEY=...
+EXPO_PUBLIC_SUPABASE_URL=...
+EXPO_PUBLIC_SUPABASE_ANON_KEY=...
+EXPO_PUBLIC_OCR_SPACE_KEY=...
 ```
 
-> `config.js`는 `.gitignore`에 포함되어 있습니다. 절대 커밋하지 마세요.
+> `.env.local`은 `.gitignore`에 포함됩니다. 절대 커밋하지 마세요.
 
 ### GitHub Actions Secrets 설정
 
 배치 스크립트 실행에 필요한 환경 변수를 GitHub 저장소 Settings → Secrets에 등록:
 
-| Secret 이름          | 내용                        |
-| -------------------- | --------------------------- |
-| `SUPABASE_URL`       | Supabase 프로젝트 URL       |
-| `SUPABASE_SERVICE_KEY` | Supabase service role key |
-| `HASDATA_KEY`        | hasdata API 키              |
-| `OCR_SPACE_KEY`      | OCR.space API 키            |
+| Secret 이름            | 내용                        |
+| ---------------------- | --------------------------- |
+| `SUPABASE_URL`         | Supabase 프로젝트 URL       |
+| `SUPABASE_SERVICE_KEY` | Supabase service role key   |
+| `HASDATA_KEY`          | hasdata API 키              |
+| `OCR_SPACE_KEY`        | OCR.space API 키            |
 
 ---
 
@@ -197,30 +194,39 @@ export const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
 
 ```
 toon-notifier-app/
-├── App.js                        ← 루트: 알림 핸들러 + push token 등록
-├── app.json                      ← Expo 앱 설정 (EAS projectId 포함)
-├── eas.json                      ← EAS 빌드 설정
-├── config.js                     ← API 키 (gitignore)
+├── App.js                        ← 루트: 알림 핸들러 + GestureHandlerRootView + 푸시 토큰 등록
+├── app.config.js                 ← Expo 설정 (OTA: ON_LOAD, runtimeVersion: appVersion)
+├── eas.json                      ← EAS 빌드 프로필 (production: autoIncrement)
+├── config.js                     ← EXPO_PUBLIC_* 환경변수 export (.gitignore 포함)
 ├── scripts/
-│   └── check-toons.js            ← GitHub Actions 배치 스크립트
-├── .github/workflows/
-│   └── check-toons.yml           ← 1시간마다 배치 실행
+│   ├── check-toons.js            ← GitHub Actions 배치: 에피소드 감지 + 푸시 알림 발송
+│   └── test-check-toons.js       ← filterNewPosts 로직 테스트 (16개 케이스)
 └── src/
+    ├── constants/
+    │   └── urls.js               ← API Base URL 상수
     ├── screens/
-    │   └── HomeScreen.js         ← 메인 화면 (섹션 리스트 + 새로고침)
+    │   └── HomeScreen.js         ← 메인 화면 (리스트 + 새로고침 + AppState 복귀 처리)
     ├── components/
-    │   ├── ToonCard.js           ← 카드 UI (스와이프 삭제, NEW 배지)
-    │   ├── AddToonModal.js       ← 툰 추가 바텀시트 (드래그 투 디스미스)
+    │   ├── ToonCard.js           ← 카드 UI (스와이프 삭제, 에피소드 목록 토글)
+    │   ├── CardShape.js          ← 카드 좌측 Shape 아이콘 (SVG, ID 기반 결정론적 생성)
+    │   ├── AddToonModal.js       ← 툰 추가 바텀시트 (링크 붙여넣기 → 자동 파싱)
     │   └── EmptyState.js         ← 빈 상태 화면
     ├── services/
-    │   ├── toon-service.js       ← AsyncStorage CRUD + Supabase 동기화
-    │   ├── supabase.js           ← Supabase 클라이언트
+    │   ├── toon-service.js       ← barrel re-export (toon-store + check-service + notifications)
+    │   ├── toon-store.js         ← AsyncStorage CRUD + Supabase 동기화
+    │   ├── check-service.js      ← 에피소드 감지 로직 (checkToon, checkAllToons)
+    │   ├── notifications.js      ← 로컬 알림 전송 + 권한 요청
     │   ├── instagram-api.js      ← hasdata API 호출 및 응답 파싱
-    │   └── ocr-service.js        ← OCR.space API (이미지 → 텍스트)
+    │   ├── ocr-service.js        ← OCR (ocr.space API, 앱+서버 공통, post.id 캐싱)
+    │   └── supabase.js           ← Supabase 클라이언트
+    ├── utils/
+    │   └── matchingUtils.js      ← 시리즈 키워드 매칭 공통 로직 (앱+서버 공유, CommonJS)
     ├── hooks/
-    │   └── useKeywordDetector.js ← 화/편/ep 숫자 추출 정규식
-    └── utils/
-        └── emoji-icon.js         ← 시리즈 이름 → 이모지 매핑
+    │   └── useKeywordDetector.js ← matchingUtils re-export (하위 호환)
+    ├── context/
+    │   └── ThemeContext.js       ← 다크/라이트 테마
+    └── theme/
+        └── index.js              ← 테마 토큰 (색상, 폰트)
 ```
 
 ---
@@ -228,42 +234,49 @@ toon-notifier-app/
 ## 에피소드 감지 흐름
 
 ```
-인스타그램 게시물 (최신 12개, 오래된 순으로 처리)
+인스타그램 게시물 (최신 12개, 최신순으로 처리)
         │
-        ▼  ← 각 게시물마다 반복 (루프 끝까지)
-캡션에 시리즈 키워드 있음?
+        ▼  ← 각 게시물마다 반복
+캡션에 시리즈 키워드 있음? (keyWords, minMatch 기준)
   ├─ YES → 캡션에서 화수 추출
-  │         └─ 화수 없음 → OCR 폴백
-  └─ NO  → OCR로 이미지에서 키워드 확인
+  │         └─ 화수 없음 → OCR 폴백 (캐시 우선 확인)
+  └─ NO  → OCR로 이미지에서 키워드 확인 (캐시 우선 확인)
               └─ 키워드 없음 → 건너뜀
 
-화수 > 현재까지 발견한 최고화수?
-  ├─ YES → collected 배열에 추가, 계속 루프 진행 (중단 안 함)
-  └─ NO  → 건너뜀
+화수 추출됨?
+  ├─ ep <= readEpisode → 즉시 중단 (이미 읽은 화수 이전은 스킵)
+  ├─ ep > readEpisode → collected 배열에 추가, 루프 계속
+  └─ ep 없음 → 건너뜀
 
 ── 루프 종료 후 ──
 
 collected 비어있음?
   ├─ YES → 변경 없음
-  │         └─ 캡션에 시리즈 게시물 전혀 없음? → undetectable 뱃지 표시
+  │         └─ 캡션에 시리즈 게시물 전혀 없음? → undetectable 배지 표시
+  │         └─ 3주 이상 새 포스트 없음? → 완결 처리
   └─ NO  → episodeHistory + unreadPosts 병합 저장
              알림 전송: "3화, 4화가 추가되었어요" (복수화 합산)
 ```
 
-### 직접 확인(undetectable) 뱃지
+### 직접 확인(undetectable) 배지
 
 최신 12개 게시물 캡션 어디에도 시리즈 키워드가 없을 때 표시.
 감지 루프가 완료된 뒤에 판단하므로, OCR 기회를 먼저 보장한다.
 당겨서 수동 새로고침 시 undetectable 툰도 재시도한다.
 
-### 키워드 매칭 전략
+### 키워드 매칭 전략 (`matchingUtils.js`)
 
-| 경로      | 사용 단어                     | 이유                      |
-| --------- | ----------------------------- | ------------------------- |
-| 캡션 매칭 | 시리즈명에서 3자 이상 단어 우선, 없으면 가장 긴 2개 | 흔한 짧은 단어 오탐 방지  |
-| OCR 매칭  | 시리즈명 모든 단어(2자 이상)  | OCR 노이즈 허용, 관대하게 |
+앱(`check-service.js`)과 서버(`check-toons.js`) 모두 `matchingUtils.js`의 동일한 함수를 사용한다.
 
-### 화수 추출 패턴 (캡션)
+| 경로      | 함수            | 기준                                         |
+| --------- | --------------- | -------------------------------------------- |
+| 캡션 매칭 | `captionMatches` | `keyWords` 중 `minMatch`개 이상 토큰 일치    |
+| OCR 매칭  | `ocrMatches`    | `keyWords` 중 `minMatch`개 이상 substring 포함 |
+
+> `keyWords`: 시리즈명에서 3자 이상 단어 우선, 없으면 가장 긴 2개  
+> `minMatch`: `min(2, keyWords.length)`
+
+### 화수 추출 패턴 (`extractEpisodeNumber`)
 
 | 형식            | 예시    |
 | --------------- | ------- |
@@ -271,13 +284,14 @@ collected 비어있음?
 | `n편`           | `3편`   |
 | `ep.n` / `EP n` | `ep.12` |
 | `#n`            | `#47`   |
-
-### 화수 추출 패턴 (OCR 추가)
-
-| 형식              | 예시            |
-| ----------------- | --------------- |
-| 괄호 안 숫자      | `(2,` → `2`     |
 | 줄 단위 독립 숫자 | `\n47\n` → `47` |
+
+### 화수 추출 패턴 (OCR 추가, `extractEpisodeNumberFromOCR`)
+
+| 형식              | 예시        |
+| ----------------- | ----------- |
+| 괄호 안 숫자      | `(2,` → `2` |
+| 첫 번째 독립 숫자 | `\b47\b`    |
 
 ---
 
@@ -293,16 +307,15 @@ collected 비어있음?
   lastEpisode: number,     // 마지막 감지된 화수
   readEpisode: number,     // 사용자가 읽음 처리한 화수
   hasNewEpisode: boolean,  // 새 에피소드 여부
+  isComplete: boolean,     // 완결 여부
+  pendingComplete: boolean, // 미읽은 화 있는 동안 완결 알림 유예
+  undetectable: boolean,   // 최신 12개에 시리즈 게시물 없음 → 직접 확인 필요
   episodeHistory: Array<{ episode: number, url: string }>, // 누적 에피소드 기록 (등록화 포함)
   unreadPosts: Array<{ episode: number, url: string }>,    // 아직 안 읽은 에피소드 목록
-  undetectable: boolean,   // 최신 12개에 시리즈 게시물 없음 → 직접 확인 필요
   lastPostId: string,      // 마지막 확인한 게시물 ID
   lastPostUrl: string,     // 게시물 링크
   lastThumbnailUrl: string,
   lastEpisodeTitle: string,
-  isComplete: boolean,     // 완결 여부
-  pendingComplete: boolean, // 미읽은 화 있는 동안 완결 알림 유예
-  deviceId: string,        // 디바이스 식별자 (push token 매칭용)
   addedAt: string,         // ISO 날짜
   updatedAt: string,
 }
@@ -312,9 +325,9 @@ collected 비어있음?
 
 ```js
 {
-  token: string,    // Expo push token (ExponentPushToken[...])
-  platform: string, // 'ios' | 'android'
-  device_id: string // 디바이스 식별자
+  token: string,     // Expo push token (ExponentPushToken[...])
+  platform: string,  // 'ios' | 'android'
+  device_id: string  // 디바이스 식별자
 }
 ```
 
@@ -331,19 +344,20 @@ collected 비어있음?
 
 ### 카드 탭 동작
 
-| 동작       | 결과                                                             |
-| ---------- | ---------------------------------------------------------------- |
-| 탭         | 에피소드 목록 아코디언 펼치기 / 닫기 (애니메이션)                |
+| 동작        | 결과                                                            |
+| ----------- | --------------------------------------------------------------- |
+| 탭          | 에피소드 목록 아코디언 펼치기 / 닫기 (애니메이션)               |
 | 에피소드 탭 | 해당 화 인스타 게시물 열기; 안 읽은 화면 readEpisode 자동 진행  |
-| 롱프레스   | 시리즈 이름 / 읽은 화수 수정 모달 열기                          |
-| 새로고침 ↺ | 해당 툰 단건 체크 (OCR 포함)                                    |
-| IG 아이콘  | 해당 계정 인스타그램 프로필 열기 (새로고침 없음)                |
+| 스와이프    | 툰 삭제                                                         |
+| 새로고침 ↺  | 해당 툰 단건 체크 (OCR 포함)                                    |
+| IG 아이콘   | 해당 계정 인스타그램 프로필 열기                                |
 
 ### 툰 추가 모달
 
 1. 마지막으로 읽은 화의 인스타그램 링크 붙여넣기 (필수)
 2. 링크 가져오기 성공 후 계정명 / 시리즈명 / 화수 자동 채움
 3. 자동 채운 값 직접 수정 가능 (링크 가져오기 전 필드 잠김)
+4. 힌트 텍스트: 자동 인식 결과 수정 안내, 화수 정확히 입력 안내
 
 ---
 
@@ -355,13 +369,13 @@ collected 비어있음?
 | ---- | ---- |
 | 툰 등록 | 인스타 게시물 링크 붙여넣기 → 계정명 / 시리즈명 / 화수 자동 파싱 |
 | 에피소드 감지 | 캡션 키워드 매칭 + 정규식 화수 추출 (`n화` / `n편` / `ep.n` / `#n`) |
-| OCR 폴백 (앱) | 캡션에서 화수 추출 실패 시 썸네일 이미지를 ML Kit(`@react-native-ml-kit/text-recognition`)로 온디바이스 OCR — API 키 불필요, 네트워크 없이 동작 |
-| OCR 폴백 (서버) | GitHub Actions 배치에서는 ML Kit 사용 불가 → ocr.space API로 대체 (서버 전용) |
-| 완결 처리 | `완` / `완결` 패턴 감지 → 가상 화수 부여, 완결 배지 표시 |
+| OCR 폴백 | 캡션에서 화수 추출 실패 시 썸네일 이미지를 ocr.space API로 인식 — 앱·서버 모두 동일 API 사용 |
+| OCR 캐싱 | post.id를 키로 AsyncStorage에 결과 저장 → 동일 포스트 반복 API 호출 방지 |
+| 최신순 검사 + 조기 중단 | 포스트를 최신순으로 검사하다가 readEpisode 이하 화수 도달 시 즉시 중단 |
+| 완결 처리 | `완` / `완결` 패턴 감지 또는 3주 이상 새 포스트 없으면 완결 처리 |
 | 푸시 알림 | GitHub Actions 배치(3시간)가 새 화수 감지 시 Expo Push로 기기 알림 전송 |
 | 에피소드 목록 | 카드 탭 시 읽은 화 / 안 읽은 화 목록 펼치기, 화수 탭 → 인스타 이동 + 읽음 처리 |
 | 스와이프 삭제 | 카드 좌스와이프로 툰 삭제 |
-| 수정 | 카드 롱프레스 → 시리즈명 / 읽은 화수 수정 |
 | 다크 모드 | 시스템 기본값 연동, 헤더 버튼으로 수동 전환 |
 | 백그라운드 복귀 | AppState 감지 → 포그라운드 복귀 시 목록 자동 갱신 |
 
@@ -369,9 +383,10 @@ collected 비어있음?
 
 | 레이어 | 파일 | 역할 |
 | ------ | ---- | ---- |
-| 앱 로직 | `toon-store.js` | AsyncStorage CRUD + Supabase 동기화 |
-| 앱 로직 | `check-service.js` | 에피소드 감지 (`checkToon`, `checkAllToons`) |
-| 앱 로직 | `notifications.js` | 로컬 알림 전송 |
+| 공통 로직 | `src/utils/matchingUtils.js` | 앱·서버 공유 매칭 로직 (단일 진실 공급원) |
+| 앱 로직 | `src/services/toon-store.js` | AsyncStorage CRUD + Supabase 동기화 |
+| 앱 로직 | `src/services/check-service.js` | 에피소드 감지 (`checkToon`, `checkAllToons`) |
+| 앱 로직 | `src/services/notifications.js` | 로컬 알림 전송 |
 | 서버 배치 | `scripts/check-toons.js` | GitHub Actions: 감지 + 푸시 알림 |
 | 데이터 | Supabase | 서버↔앱 상태 동기화, 푸시 토큰 저장 |
 | OTA | EAS Update | JS 변경 시 새 빌드 없이 즉시 배포 |

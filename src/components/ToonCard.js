@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo, memo } from "react";
 import {
   View,
   Text,
@@ -17,9 +17,11 @@ import {
 } from "../services/toon-service";
 import { useTheme } from "../context/ThemeContext";
 import CardShape, { blobIndex } from "./CardShape";
+import { countRender } from "../utils/perf";
 
 // ── ToonCard ─────────────────────────────────────────
-export default function ToonCard({ toon, onUpdate, onMessage }) {
+function ToonCard({ toon, onUpdate, onMessage }) {
+  countRender(`ToonCard[${toon.seriesName}]`);
   const { theme } = useTheme();
   const swipeableRef = useRef(null);
   const [isChecking, setIsChecking] = useState(false);
@@ -29,10 +31,23 @@ export default function ToonCard({ toon, onUpdate, onMessage }) {
   const chevronAnim = useRef(new Animated.Value(0)).current;
   const episodeAnimsRef = useRef({});
 
+  const episodes = useMemo(() => {
+    const map = {};
+    for (const h of toon.episodeHistory || []) map[h.episode] = h;
+    for (const p of toon.unreadPosts || []) {
+      if (!map[p.episode]) map[p.episode] = p;
+    }
+    return Object.values(map).sort((a, b) => a.episode - b.episode);
+  }, [toon.episodeHistory, toon.unreadPosts]);
+
   useEffect(() => {
     if (isChecking) {
       spinLoop.current = Animated.loop(
-        Animated.timing(spinAnim, { toValue: 1, duration: 900, useNativeDriver: true })
+        Animated.timing(spinAnim, {
+          toValue: 1,
+          duration: 900,
+          useNativeDriver: true,
+        }),
       );
       spinLoop.current.start();
     } else {
@@ -50,11 +65,15 @@ export default function ToonCard({ toon, onUpdate, onMessage }) {
     }).start();
 
     if (expanded) {
-      const episodes = allEpisodes();
       const anims = episodes.map((ep) => {
         const a = getEpAnim(ep.episode);
         a.setValue(0);
-        return Animated.spring(a, { toValue: 1, useNativeDriver: true, tension: 80, friction: 9 });
+        return Animated.spring(a, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 80,
+          friction: 9,
+        });
       });
       Animated.stagger(40, anims).start();
     }
@@ -67,18 +86,14 @@ export default function ToonCard({ toon, onUpdate, onMessage }) {
     return episodeAnimsRef.current[ep];
   };
 
-  // episodeHistory + unreadPosts 병합, 오름차순
-  const allEpisodes = () => {
-    const map = {};
-    for (const h of (toon.episodeHistory || [])) map[h.episode] = h;
-    for (const p of (toon.unreadPosts || [])) {
-      if (!map[p.episode]) map[p.episode] = p;
-    }
-    return Object.values(map).sort((a, b) => a.episode - b.episode);
-  };
-
-  const spinRotate = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
-  const chevronRotate = chevronAnim.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "180deg"] });
+  const spinRotate = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+  const chevronRotate = chevronAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "180deg"],
+  });
 
   const idx = blobIndex(toon.id);
   const cardBg = theme.cardTints[idx];
@@ -87,11 +102,14 @@ export default function ToonCard({ toon, onUpdate, onMessage }) {
   const last = toon.lastEpisode || 0;
   const read = toon.readEpisode || 0;
   const episodeLabel = (() => {
-    if (last === 0 && read === 0) return '아직 읽은 편 없음';
-    if (toon.hasNewEpisode && last > read) return `${last}화까지 나옴 / ${read}화까지 봄`;
+    if (last === 0 && read === 0) return "아직 읽은 편 없음";
+    if (toon.hasNewEpisode && last > read)
+      return `${last}화까지 나옴 / ${read}화까지 봄`;
     return `${read || last}화까지 봄`;
   })();
-  const metaText = toon.username ? `@${toon.username} · ${episodeLabel}` : episodeLabel;
+  const metaText = toon.username
+    ? `@${toon.username} · ${episodeLabel}`
+    : episodeLabel;
 
   const toggleExpand = () => {
     setExpanded((v) => !v);
@@ -100,7 +118,9 @@ export default function ToonCard({ toon, onUpdate, onMessage }) {
   const handleEpisodeTap = async (ep) => {
     await Linking.openURL(ep.url);
     if (ep.episode > (toon.readEpisode || 0)) {
-      const remaining = (toon.unreadPosts || []).filter((p) => p.episode > ep.episode);
+      const remaining = (toon.unreadPosts || []).filter(
+        (p) => p.episode > ep.episode,
+      );
       await advanceEpisode(toon.id, ep.episode, remaining);
       onUpdate();
     }
@@ -128,14 +148,17 @@ export default function ToonCard({ toon, onUpdate, onMessage }) {
   };
 
   const renderRightActions = () => (
-    <TouchableOpacity style={st.deleteReveal} onPress={handleDelete} activeOpacity={0.75}>
+    <TouchableOpacity
+      style={st.deleteReveal}
+      onPress={handleDelete}
+      activeOpacity={0.75}
+    >
       <Feather name="trash-2" size={20} color={theme.deleteText} />
       <Text style={st.deleteTxt}>삭제</Text>
     </TouchableOpacity>
   );
 
   const st = s(theme);
-  const episodes = allEpisodes();
 
   return (
     <View style={st.wrapper}>
@@ -148,7 +171,11 @@ export default function ToonCard({ toon, onUpdate, onMessage }) {
       >
         {/* 카드 컨테이너 — 헤더 + 에피소드 목록 */}
         <View
-          style={[st.cardContainer, { backgroundColor: cardBg }, isNew && { borderWidth: 1.5, borderColor: theme.accent }]}
+          style={[
+            st.cardContainer,
+            { backgroundColor: cardBg },
+            isNew && { borderWidth: 1.5, borderColor: theme.accent },
+          ]}
         >
           {/* 헤더 행 — 탭하면 펼치기/접기 */}
           <TouchableOpacity
@@ -161,44 +188,102 @@ export default function ToonCard({ toon, onUpdate, onMessage }) {
             </View>
 
             <View style={st.info}>
-              <Text style={st.seriesName} numberOfLines={1}>{toon.seriesName}</Text>
-              <Text style={st.meta} numberOfLines={1}>{metaText}</Text>
+              <Text style={st.seriesName} numberOfLines={1}>
+                {toon.seriesName}
+              </Text>
+              <Text style={st.meta} numberOfLines={1}>
+                {metaText}
+              </Text>
             </View>
 
             <View style={st.right}>
               {/* 배지 */}
               {toon.undetectable ? (
                 <View style={[st.tag, { backgroundColor: theme.surface }]}>
-                  <Text style={[st.tagText, { color: theme.muted }]}>직접 확인</Text>
+                  <Text style={[st.tagText, { color: theme.muted }]}>
+                    직접 확인
+                  </Text>
                 </View>
               ) : isNew ? (
-                <View style={[st.tag, { backgroundColor: (toon.isComplete && !toon.pendingComplete) ? theme.tagCompleteBg : theme.tagNewBg }]}>
-                  <Text style={[st.tagText, { color: (toon.isComplete && !toon.pendingComplete) ? theme.tagCompleteColor : theme.tagNewColor }]}>
-                    {(toon.isComplete && !toon.pendingComplete) ? "완결됨!" : "새 에피소드"}
+                <View
+                  style={[
+                    st.tag,
+                    {
+                      backgroundColor:
+                        toon.isComplete && !toon.pendingComplete
+                          ? theme.tagCompleteBg
+                          : theme.tagNewBg,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      st.tagText,
+                      {
+                        color:
+                          toon.isComplete && !toon.pendingComplete
+                            ? theme.tagCompleteColor
+                            : theme.tagNewColor,
+                      },
+                    ]}
+                  >
+                    {toon.isComplete && !toon.pendingComplete
+                      ? "완결됨!"
+                      : "새 에피소드"}
                   </Text>
                 </View>
               ) : toon.isComplete ? (
-                <View style={[st.tag, { backgroundColor: theme.tagCompleteBg }]}>
-                  <Text style={[st.tagText, { color: theme.tagCompleteColor }]}>완결</Text>
+                <View
+                  style={[st.tag, { backgroundColor: theme.tagCompleteBg }]}
+                >
+                  <Text style={[st.tagText, { color: theme.tagCompleteColor }]}>
+                    완결
+                  </Text>
                 </View>
               ) : (
                 <View style={[st.tag, { backgroundColor: theme.tagReadBg }]}>
-                  <Feather name="check" size={10} color={theme.tagReadColor} style={{ marginRight: 3 }} />
-                  <Text style={[st.tagText, { color: theme.tagReadColor }]}>읽음</Text>
+                  <Feather
+                    name="check"
+                    size={10}
+                    color={theme.tagReadColor}
+                    style={{ marginRight: 3 }}
+                  />
+                  <Text style={[st.tagText, { color: theme.tagReadColor }]}>
+                    읽음
+                  </Text>
                 </View>
               )}
 
               {/* 버튼 행 */}
               <View style={st.btnRow}>
-                <TouchableOpacity onPress={handleCheck} style={st.iconBtn} testID="refresh-btn">
-                  <Animated.View style={{ transform: [{ rotate: spinRotate }] }}>
+                <TouchableOpacity
+                  onPress={handleCheck}
+                  style={st.iconBtn}
+                  testID="refresh-btn"
+                >
+                  <Animated.View
+                    style={{ transform: [{ rotate: spinRotate }] }}
+                  >
                     <Feather name="rotate-cw" size={15} color={theme.muted} />
                   </Animated.View>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => Linking.openURL(`https://www.instagram.com/${toon.username}/`)} style={st.iconBtn}>
-                  <Ionicons name="logo-instagram" size={15} color={theme.muted} />
+                <TouchableOpacity
+                  onPress={() =>
+                    Linking.openURL(
+                      `https://www.instagram.com/${toon.username}/`,
+                    )
+                  }
+                  style={st.iconBtn}
+                >
+                  <Ionicons
+                    name="logo-instagram"
+                    size={15}
+                    color={theme.muted}
+                  />
                 </TouchableOpacity>
-                <Animated.View style={{ transform: [{ rotate: chevronRotate }] }}>
+                <Animated.View
+                  style={{ transform: [{ rotate: chevronRotate }] }}
+                >
                   <Feather name="chevron-down" size={15} color={theme.muted} />
                 </Animated.View>
               </View>
@@ -220,18 +305,45 @@ export default function ToonCard({ toon, onUpdate, onMessage }) {
                       key={ep.episode}
                       style={{
                         opacity: anim,
-                        transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }],
+                        transform: [
+                          {
+                            translateY: anim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [10, 0],
+                            }),
+                          },
+                        ],
                       }}
                     >
                       <TouchableOpacity
-                        style={[st.epRow, isUnread && { backgroundColor: theme.tagNewBg + "55" }]}
+                        style={[
+                          st.epRow,
+                          isUnread && {
+                            backgroundColor: theme.tagNewBg + "55",
+                          },
+                        ]}
                         onPress={() => handleEpisodeTap(ep)}
                         activeOpacity={0.7}
                       >
-                        <Text style={[st.epRowNum, isUnread && { color: theme.tagNewColor, fontWeight: "700" }]}>
+                        <Text
+                          style={[
+                            st.epRowNum,
+                            isUnread && {
+                              color: theme.tagNewColor,
+                              fontWeight: "700",
+                            },
+                          ]}
+                        >
                           {ep.episode}화
                         </Text>
-                        {isUnread && <View style={[st.unreadDot, { backgroundColor: theme.tagNewColor }]} />}
+                        {isUnread && (
+                          <View
+                            style={[
+                              st.unreadDot,
+                              { backgroundColor: theme.tagNewColor },
+                            ]}
+                          />
+                        )}
                         <Feather
                           name="arrow-right"
                           size={13}
@@ -250,6 +362,10 @@ export default function ToonCard({ toon, onUpdate, onMessage }) {
     </View>
   );
 }
+
+export default memo(ToonCard, (prev, next) => {
+  return prev.toon.updatedAt === next.toon.updatedAt;
+});
 
 const s = (theme) =>
   StyleSheet.create({
@@ -282,9 +398,20 @@ const s = (theme) =>
       gap: 12,
       padding: 12,
     },
-    iconWrap: { width: 34, height: 34, flexShrink: 0, justifyContent: "center", alignItems: "center" },
+    iconWrap: {
+      width: 34,
+      height: 34,
+      flexShrink: 0,
+      justifyContent: "center",
+      alignItems: "center",
+    },
     info: { flex: 1, minWidth: 0 },
-    seriesName: { fontWeight: "700", fontSize: 15, color: theme.text, marginBottom: 3 },
+    seriesName: {
+      fontWeight: "700",
+      fontSize: 15,
+      color: theme.text,
+      marginBottom: 3,
+    },
     meta: { fontSize: 12.5, color: theme.muted },
     right: { alignItems: "flex-end", gap: 8, flexShrink: 0 },
     tag: {
@@ -300,7 +427,12 @@ const s = (theme) =>
 
     // 에피소드 목록
     episodeList: { paddingHorizontal: 14, paddingBottom: 12 },
-    divider: { height: 1, backgroundColor: theme.divider, marginBottom: 8, opacity: 0.5 },
+    divider: {
+      height: 1,
+      backgroundColor: theme.divider,
+      marginBottom: 8,
+      opacity: 0.5,
+    },
     epRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -311,5 +443,10 @@ const s = (theme) =>
     },
     epRowNum: { fontSize: 13.5, color: theme.text, flex: 1 },
     unreadDot: { width: 6, height: 6, borderRadius: 3, marginRight: 8 },
-    emptyText: { fontSize: 12.5, color: theme.muted, textAlign: "center", paddingVertical: 12 },
+    emptyText: {
+      fontSize: 12.5,
+      color: theme.muted,
+      textAlign: "center",
+      paddingVertical: 12,
+    },
   });

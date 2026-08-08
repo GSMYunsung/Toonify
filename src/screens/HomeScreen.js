@@ -25,6 +25,7 @@ import AddToonModal from "../components/AddToonModal";
 import EmptyState from "../components/EmptyState";
 import { useTheme } from "../context/ThemeContext";
 import { FONTS } from "../theme";
+import { markStart, markEnd, report } from "../utils/perf";
 
 function relativeTime(ts) {
   if (!ts) return "동기화 전";
@@ -57,8 +58,10 @@ export default function HomeScreen() {
   }, []);
 
   const loadToons = useCallback(async () => {
+    markStart('loadToons');
     const sorted = await getSortedToons();
     setToons(sorted);
+    markEnd('loadToons');
   }, []);
 
   useEffect(() => {
@@ -143,8 +146,12 @@ export default function HomeScreen() {
     setRefreshing(true);
     try {
       setIsSyncing(true);
+      markStart('syncFromSupabase');
       await syncFromSupabase();
+      markEnd('syncFromSupabase');
+      markStart('checkAllToons');
       await checkAllToons(setStatusText, { forceAll: true });
+      markEnd('checkAllToons');
       await loadToons();
       setLastSyncedAt(Date.now());
     } catch (e) {
@@ -152,6 +159,7 @@ export default function HomeScreen() {
     } finally {
       setIsSyncing(false);
       setStatusText("");
+      report();
     }
     setRefreshing(false);
     showToast("모든 툰의 새 에피소드를 확인했어요");

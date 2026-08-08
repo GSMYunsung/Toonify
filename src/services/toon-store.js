@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "./supabase";
 import { sendLocalNotification } from "./notifications";
+import { markStart, markEnd, countRender } from "../utils/perf";
 
 const STORAGE_KEY = "toon_notifier_v2";
 const DEVICE_ID_KEY = "device_id";
@@ -25,8 +26,11 @@ export async function getDeviceId() {
 }
 
 export async function getToons() {
+  countRender('getToons()');
   try {
+    markStart('AsyncStorage.getItem');
     const data = await AsyncStorage.getItem(STORAGE_KEY);
+    markEnd('AsyncStorage.getItem');
     return JSON.parse(data || "[]");
   } catch {
     return [];

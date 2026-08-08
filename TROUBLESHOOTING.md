@@ -655,6 +655,61 @@ const matched = captionIsComplete || allWords.some((w) => cap.includes(w));
 
 ---
 
+## #17 — ToonCard 불필요한 리렌더링
+
+**날짜:** 2026-07-30
+
+**증상:**
+
+툰 목록을 당겨서 새로고침하면, 데이터가 바뀌지 않은 카드도 전부 리렌더링됨. 툰이 많아질수록 새로고침이 느려질 수 있음.
+
+**원인:**
+
+`HomeScreen`이 새로고침 완료 후 `setToons(sorted)`로 상태를 갱신하면 React는 자식 컴포넌트를 전부 재렌더링함. `ToonCard`는 메모이제이션 없이 `export default function`으로 선언되어 있어, props로 받은 `toon` 객체 참조가 바뀌면 항상 리렌더됨.
+
+또한 `ToonCard` 내부의 `allEpisodes()` 함수가 매 렌더마다 `episodeHistory`와 `unreadPosts`를 합산·정렬해 새 배열을 생성함 — 카드를 펼치거나 접을 때마다 재계산.
+
+**측정 결과 (perf.js 도구로 직접 측정):**
+
+```
+개선 전: 새로고침 1회 → ToonCard 3회 렌더 (초기 + 상태 갱신 2회)
+개선 후: 새로고침 n회 → ToonCard 총 1회 렌더 (초기 마운트만)
+```
+
+**해결 방법:**
+
+1. **React.memo + updatedAt 비교자** — `toon.updatedAt`이 바뀌지 않으면 리렌더 건너뜀
+
+```js
+export default memo(ToonCard, (prev, next) => {
+  return prev.toon.updatedAt === next.toon.updatedAt;
+});
+```
+
+2. **useMemo로 에피소드 목록 메모이제이션** — `episodeHistory` / `unreadPosts`가 바뀔 때만 재계산
+
+```js
+const episodes = useMemo(() => {
+  const map = {};
+  for (const h of toon.episodeHistory || []) map[h.episode] = h;
+  for (const p of toon.unreadPosts || []) {
+    if (!map[p.episode]) map[p.episode] = p;
+  }
+  return Object.values(map).sort((a, b) => a.episode - b.episode);
+}, [toon.episodeHistory, toon.unreadPosts]);
+```
+
+3. **perf.js 측정 코드 `__DEV__` 가드** — 프로덕션에서는 완전 비활성, 개발 모드에서만 동작. 코드는 남겨두고 나중에 재사용 가능.
+
+```js
+export function markStart(label) {
+  if (!__DEV__) return;  // 프로덕션에서는 no-op
+  marks[label] = performance.now();
+}
+```
+
+---
+
 ## #16 — 앱·서버 매칭 로직 분리로 인한 버그 누적
 
 **날짜:** 2026-08-03

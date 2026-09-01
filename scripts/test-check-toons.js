@@ -3,7 +3,7 @@
  * 실행: node scripts/test-check-toons.js
  */
 
-const { filterNewPosts } = require('../src/utils/matchingUtils');
+const { filterNewPosts, buildSeriesKeys, captionMatches, ocrMatches } = require('../src/utils/matchingUtils');
 
 // ─── 테스트 유틸 ─────────────────────────────────────────────────
 let passed = 0;
@@ -180,6 +180,82 @@ test('[정상] 첫 체크 기준점이 oldest(ep1)면 두 번째 체크에서 ep
   const correctResult = filterNewPosts(EXISTING_POSTS, 'ep1'); // oldest를 기준으로 잡으면
   const detectedEps = correctResult.map(p => p.id);
   expect(detectedEps).toEqual(['ep2', 'ep3']); // ep2·ep3 정상 감지 ✓
+});
+
+// ─── 케이스 9: buildSeriesKeys — 대소문자 정규화 ─────────────────
+console.log('\n[케이스 9] buildSeriesKeys — keyWords 소문자 정규화');
+
+test('영문 혼용 시리즈명 → keyWords가 소문자로 정규화됨', () => {
+  const { keyWords } = buildSeriesKeys('ReLIFE 리라이프');
+  expect(keyWords).toEqual(['relife', '리라이프']);
+});
+
+test('순수 한글 시리즈명 → keyWords 변화 없음 (회귀)', () => {
+  const { keyWords, minMatch } = buildSeriesKeys('시리즈 이야기');
+  expect(keyWords).toEqual(['시리즈', '이야기']);
+  expect(minMatch).toBe(2);
+});
+
+test('allWords는 원본 대소문자 그대로 유지 (undetectable 배지 로직용, 의도적으로 미변경)', () => {
+  const { allWords } = buildSeriesKeys('SSS급 히어로');
+  expect(allWords).toEqual(['SSS급', '히어로']);
+});
+
+// ─── 케이스 10: captionMatches — 대소문자 무시 매칭 ──────────────
+console.log('\n[케이스 10] captionMatches — 대소문자 무시 매칭');
+
+test('시리즈명·캡션 둘 다 동일 케이스면 매칭 (기존 동작 유지)', () => {
+  const { keyWords, minMatch } = buildSeriesKeys('ReLIFE 리라이프');
+  const { ok, matched } = captionMatches(keyWords, minMatch, 'ReLIFE 리라이프 12화');
+  expect(ok).toBe(true);
+  expect(matched).toEqual(['relife', '리라이프']);
+});
+
+test('[버그 재현] 캡션이 소문자인데 시리즈명은 대문자 섞임 → 정규화 후 매칭돼야 함', () => {
+  const { keyWords, minMatch } = buildSeriesKeys('ReLIFE 리라이프');
+  const { ok, matched } = captionMatches(keyWords, minMatch, 'relife 리라이프 12화');
+  expect(ok).toBe(true);
+  expect(matched).toHaveLength(2);
+});
+
+test('[버그 재현] 시리즈명은 소문자, 캡션은 전체 대문자(SSS급 스타일) → 매칭돼야 함', () => {
+  const { keyWords, minMatch } = buildSeriesKeys('sss급 히어로');
+  const { ok } = captionMatches(keyWords, minMatch, 'SSS급 히어로 7화');
+  expect(ok).toBe(true);
+});
+
+test('순수 한글 캡션 매칭 — 기존 동작 회귀 없음', () => {
+  const { keyWords, minMatch } = buildSeriesKeys('시리즈');
+  const { ok } = captionMatches(keyWords, minMatch, '시리즈 5화');
+  expect(ok).toBe(true);
+});
+
+test('순수 한글 — 실제로 다른 시리즈면 여전히 매칭 안 됨 (오탐 방지 회귀)', () => {
+  const { keyWords, minMatch } = buildSeriesKeys('시리즈');
+  const { ok } = captionMatches(keyWords, minMatch, '전혀다른툰 5화');
+  expect(ok).toBe(false);
+});
+
+// ─── 케이스 11: ocrMatches — 대소문자 무시 substring 매칭 ────────
+console.log('\n[케이스 11] ocrMatches — 대소문자 무시 substring 매칭');
+
+test('[버그 재현] OCR 텍스트가 대문자인데 시리즈명은 소문자 섞임 → substring 매칭돼야 함', () => {
+  const { keyWords, minMatch } = buildSeriesKeys('ReLIFE 리라이프');
+  const { ok, matched } = ocrMatches(keyWords, minMatch, '정주행 완료 RELIFE 리라이프 12');
+  expect(ok).toBe(true);
+  expect(matched).toEqual(['relife', '리라이프']);
+});
+
+test('OCR 텍스트에 단어가 다른 단어 중간에 섞여 있어도 대소문자 무시하고 substring 매칭', () => {
+  const { keyWords, minMatch } = buildSeriesKeys('sss급');
+  const { ok } = ocrMatches(keyWords, minMatch, '오늘의sss급업로드');
+  expect(ok).toBe(true);
+});
+
+test('순수 한글 OCR 텍스트 — 기존 동작 회귀 없음', () => {
+  const { keyWords, minMatch } = buildSeriesKeys('시리즈');
+  const { ok } = ocrMatches(keyWords, minMatch, '시리즈 12화 완결');
+  expect(ok).toBe(true);
 });
 
 // ─── 결과 보고 ───────────────────────────────────────────────────

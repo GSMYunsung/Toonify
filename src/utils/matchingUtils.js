@@ -4,22 +4,28 @@
 function buildSeriesKeys(seriesName) {
   const allWords = seriesName.split(/\s+/).filter((w) => w.length >= 2);
   const words3up = allWords.filter((w) => w.length >= 3);
-  const keyWords = words3up.length >= 1
-    ? words3up
-    : [...allWords].sort((a, b) => b.length - a.length).slice(0, 2);
+  const keyWords = (
+    words3up.length >= 1
+      ? words3up
+      : [...allWords].sort((a, b) => b.length - a.length).slice(0, 2)
+  ).map((w) => w.toLowerCase());
   return { allWords, keyWords, minMatch: Math.min(2, keyWords.length) };
 }
 
 function captionMatches(keyWords, minMatch, caption) {
   const tokens = new Set(
-    caption.split(/\s+/).map((t) => t.replace(/^[^가-힣a-zA-Z0-9]+|[^가-힣a-zA-Z0-9]+$/g, '')),
+    caption
+      .toLowerCase()
+      .split(/\s+/)
+      .map((t) => t.replace(/^[^가-힣a-zA-Z0-9]+|[^가-힣a-zA-Z0-9]+$/g, '')),
   );
-  const matched = keyWords.filter((w) => tokens.has(w));
+  const matched = keyWords.filter((w) => tokens.has(w.toLowerCase()));
   return { ok: keyWords.length > 0 && matched.length >= minMatch, matched, tokens };
 }
 
 function ocrMatches(keyWords, minMatch, text) {
-  const matched = keyWords.filter((w) => text.includes(w));
+  const lowerText = text.toLowerCase();
+  const matched = keyWords.filter((w) => lowerText.includes(w.toLowerCase()));
   return { ok: matched.length >= minMatch, matched };
 }
 

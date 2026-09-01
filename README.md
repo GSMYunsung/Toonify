@@ -274,7 +274,8 @@ collected 비어있음?
 | OCR 매칭  | `ocrMatches`    | `keyWords` 중 `minMatch`개 이상 substring 포함 |
 
 > `keyWords`: 시리즈명에서 3자 이상 단어 우선, 없으면 가장 긴 2개  
-> `minMatch`: `min(2, keyWords.length)`
+> `minMatch`: `min(2, keyWords.length)`  
+> 비교 시 대소문자 구분 없음 (`toLowerCase()` 정규화) — 영문/영숫자가 섞인 시리즈명(예: `ReLIFE`, `SSS급`)이 캡션·OCR 텍스트와 대소문자만 다를 때도 매칭됨. 한글은 대소문자 개념이 없어 영향 없음.
 
 ### 화수 추출 패턴 (`extractEpisodeNumber`)
 

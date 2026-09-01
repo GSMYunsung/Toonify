@@ -746,3 +746,55 @@ module.exports = { buildSeriesKeys, captionMatches, ocrMatches };
 같은 로직을 두 곳에 따로 작성하면 반드시 한 쪽이 뒤처진다. CLAUDE.md 규칙 8번으로 추가됨.
 
 ---
+
+## #18 — 영문 혼용 시리즈명 대소문자 불일치로 새 화수 미감지
+
+**날짜:** 2026-09-01
+
+**증상:**
+
+시리즈명에 영문/영숫자 단어가 섞인 툰(예: `ReLIFE`, `SSS급`)에서, 인스타 캡션이나 OCR 텍스트의 대소문자가 등록된 시리즈명과 다르면 화수가 실제로 올라와 있어도 감지되지 않음. 조용히 알림이 누락되는 버그 — 에러가 나지 않아서 로그 확인 전까지는 드러나지 않음.
+
+**원인:**
+
+`matchingUtils.js`의 핵심 매칭 3종 함수가 대소문자를 정규화하지 않고 있었음.
+
+```js
+// 문제 코드 (buildSeriesKeys) — keyWords가 원본 대소문자 그대로
+const keyWords = words3up.length >= 1 ? words3up : [...];
+
+// 문제 코드 (captionMatches) — 정확 일치, 대소문자 구분
+const matched = keyWords.filter((w) => tokens.has(w));
+
+// 문제 코드 (ocrMatches) — substring 포함, 대소문자 구분
+const matched = keyWords.filter((w) => text.includes(w));
+```
+
+`extractEpisodeNumber`/`extractSeriesName`은 이미 정규식에 `/i` 플래그를 쓰고 있었는데, 정작 시리즈 키워드 자체를 비교하는 핵심 3개 함수만 이 처리가 빠져 있었음 — 파일 내부에서도 일관성이 깨져 있던 상태.
+
+**해결 방법:**
+
+세 함수 모두 비교 경계(comparison boundary)에서 `.toLowerCase()`로 정규화. `buildSeriesKeys`에서 `keyWords` 생성 시점에 소문자로 통일하고, `captionMatches`/`ocrMatches`에서도 비교 직전에 캡션/OCR 텍스트와 `keyWords` 양쪽 모두 소문자화(양쪽 다 정규화해야 한쪽만 정규화했을 때 매칭이 오히려 깨지는 것을 방지).
+
+```js
+// matchingUtils.js — buildSeriesKeys
+const keyWords = (...).map((w) => w.toLowerCase());
+
+// matchingUtils.js — captionMatches
+const tokens = new Set(caption.toLowerCase().split(/\s+/).map(...));
+const matched = keyWords.filter((w) => tokens.has(w.toLowerCase()));
+
+// matchingUtils.js — ocrMatches
+const lowerText = text.toLowerCase();
+const matched = keyWords.filter((w) => lowerText.includes(w.toLowerCase()));
+```
+
+`buildSeriesKeys`가 반환하는 `allWords`(원본 대소문자 유지, `check-service.js`의 undetectable 배지 판정에서 사용)는 이번 수정 범위에서 의도적으로 제외 — 별도 이슈로 분리.
+
+한글은 `toLowerCase()`에 영향받지 않으므로(대소문자 개념 없음) 기존 순수 한글 시리즈명은 동작 변화 없음 — `scripts/test-check-toons.js` 회귀 테스트(케이스 9~11, 27/27 통과)로 확인.
+
+**알려진 후속 이슈 (이번 수정 범위 밖):**
+
+`check-service.js`의 `anySeriesPost`(undetectable 배지 판정) 로직도 `allWords.some((w) => caption.includes(w))`로 같은 대소문자 문제를 가지고 있음. Medium 리스크 파일이라 별도 승인 절차로 처리 예정.
+
+---

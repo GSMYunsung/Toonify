@@ -27,6 +27,50 @@
 2. **공유 로직은 `src/utils/`** — 앱(`src/`)과 서버(`scripts/`)가 함께 쓰는 로직은 반드시 공유 파일로
 3. **배포 전 자가검증** — `.claude/recipes/ota-deploy.md` 체크리스트 완료 후 배포
 4. **TROUBLESHOOTING.md 기록** — 해결한 버그/문제는 반드시 기록
+5. **작업 시작 전 리스크 등급 판단** — 아래 "리스크 기반 승인 게이트" 표를 먼저 확인
+
+---
+
+## 리스크 기반 승인 게이트
+
+작업을 시작하기 전, 무엇을 건드리는지에 따라 승인 절차의 무게를 다르게 적용합니다.
+모든 작업을 똑같이 무겁게 묶지 않고, 되돌리기 어렵거나 파급 범위가 큰 부분만 강하게 게이트합니다.
+
+| 리스크 등급 | 해당 범위 | 절차 |
+|---|---|---|
+| **High** | `matchingUtils.js`, Supabase 스키마, `check-toons.js`(서버 배치), 배포 설정(`eas.json`, `app.config.js`) | 반드시 **Plan Mode**로 계획 작성 → 사용자 승인(ExitPlanMode) 후에만 구현 착수 |
+| **Medium** | `check-service.js`, `toon-store.js`, `notifications.js` 등 서비스 레이어 | `.claude/templates/feature.md` 또는 `bugfix.md`를 채워 사용자에게 요약 확인을 받은 후 진행 (Plan Mode까지는 필수 아님) |
+| **Low** | UI 컴포넌트 스타일, 텍스트 문구, 단순 리팩터링 | 바로 진행 가능, 완료 후 결과만 보고 |
+
+- **배포(OTA/빌드)는 변경 크기와 무관하게 항상 High로 취급** — 되돌리기 어렵기 때문
+- 등급 판단이 애매하면 상위 등급(더 신중한 쪽)으로 처리
+
+---
+
+## 역할 분리 (researcher / planner / reviewer)
+
+작업은 탐색 → 계획 → 구현 → 검증의 흐름을 따르고, 각 단계는 서로 다른 역할이 담당합니다.
+
+```
+탐색(researcher)  →  계획(planner)  →  구현  →  검증(reviewer)
+```
+
+| 역할 | 담당 | 언제 호출 |
+|------|------|-----------|
+| **researcher** | `toon-researcher` 서브에이전트 (읽기 전용) | 구현 전 기존 로직·중복 여부 확인이 필요할 때. 특히 Medium/High 등급 작업 |
+| **planner** | Claude Code 기본 **Plan Mode** | High 등급 작업, 또는 사용자 승인이 필요한 변경 범위/리스크 분석 |
+| **reviewer** | `toon-reviewer` 서브에이전트 | 구현 완료 후, 배포 전 자가검증 단계에서 (`.claude/recipes/ota-deploy.md`, `new-feature.md`의 검증 단계를 대체) |
+
+researcher와 reviewer 정의는 `.claude/agents/toon-researcher.md`, `.claude/agents/toon-reviewer.md` 참고.
+
+---
+
+## 로그 / 추적성
+
+- **자동 로그** (`.claude/logs/agent-activity.jsonl`, gitignore 대상) — hooks로 자동 기록되는 raw 도구 사용 로그
+  (어떤 파일에 어떤 도구가 언제 실행됐는지). 재연성 확인·디버깅용, 커밋하지 않음.
+- **`TROUBLESHOOTING.md`** — 사람이 정제해서 쓰는 지식 베이스. 증상/원인/해결 방법 위주로 기록, 커밋 대상.
+- 자동 로그는 "무슨 일이 있었는지"의 원본 기록, TROUBLESHOOTING.md는 "무엇을 배웠는지"의 요약. 둘은 서로 대체하지 않음.
 
 ---
 

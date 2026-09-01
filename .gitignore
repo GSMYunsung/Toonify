@@ -39,3 +39,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# AI 도구 사용 자동 로그 (raw, 로컬 전용)
+.claude/logs/

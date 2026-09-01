@@ -4,6 +4,15 @@
 
 ---
 
+## 리스크 등급 (AGENTS.md 참고)
+- [ ] Low (UI/문구/단순 리팩터링) — 템플릿 간단히 채우고 바로 진행
+- [ ] Medium (서비스 레이어: check-service.js, toon-store.js, notifications.js 등) — 이 템플릿 채워 사용자 확인 후 진행
+- [ ] High (matchingUtils.js, Supabase 스키마, check-toons.js, 배포 설정) — Plan Mode로 전환해 계획 승인 먼저 받을 것
+
+판단 근거:
+
+---
+
 ## 버그 설명
 
 ## 재현 조건

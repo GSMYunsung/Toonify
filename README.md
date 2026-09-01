@@ -390,3 +390,17 @@ collected 비어있음?
 | 서버 배치 | `scripts/check-toons.js` | GitHub Actions: 감지 + 푸시 알림 |
 | 데이터 | Supabase | 서버↔앱 상태 동기화, 푸시 토큰 저장 |
 | OTA | EAS Update | JS 변경 시 새 빌드 없이 즉시 배포 |
+
+---
+
+## AI 개발 프로세스
+
+이 프로젝트는 Claude Code를 AI 개발 파트너로 활용하며, `AGENTS.md` + `.claude/`에 다음 3가지 장치를 실제로 구현해서 운영합니다.
+
+| 장치 | 내용 |
+| ---- | ---- |
+| 리스크 기반 승인 게이트 | 작업 범위를 Low / Medium / High로 분류해, 핵심 로직(매칭 로직·DB 스키마·배포 설정) 변경은 반드시 계획 승인 후 구현하고 단순 UI 변경은 바로 진행하도록 절차 강도를 차등 적용 |
+| 역할 분리 에이전트 | 탐색 전용 `toon-researcher`(읽기 전용, 기존 로직 중복 확인), 계획 수립(Plan Mode), 배포 전 자가검증 전용 `toon-reviewer`로 구현·검증 과정을 분리 |
+| 자동 로그 + 지식 베이스 | 도구 사용 이력은 `.claude/logs/agent-activity.jsonl`에 자동 기록(로컬 전용), 해결한 문제의 원인·해결 방법은 `TROUBLESHOOTING.md`에 사람이 정제해서 기록 — 재연성과 지식 축적을 분리해서 관리 |
+
+자세한 규칙은 `AGENTS.md`를 참고하세요.

@@ -1,5 +1,38 @@
 {
   "enabledPlugins": {
     "expo@claude-plugins-official": true
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mkdir -p .claude/logs && jq -c --arg ts \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" '{ts:$ts, event:\"PostToolUse\", tool:.tool_name, target:(.tool_input.file_path // .tool_input.command // null)}' >> .claude/logs/agent-activity.jsonl 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mkdir -p .claude/logs && jq -c -n --arg ts \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" '{ts:$ts, event:\"SessionStart\"}' >> .claude/logs/agent-activity.jsonl 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "mkdir -p .claude/logs && jq -c -n --arg ts \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" '{ts:$ts, event:\"Stop\"}' >> .claude/logs/agent-activity.jsonl 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
   }
 }

@@ -1230,3 +1230,55 @@ const matched = keyWords.filter((w) => lowerText.includes(w.toLowerCase()));
 `check-service.js`의 `anySeriesPost`(undetectable 배지 판정) 로직도 `allWords.some((w) => caption.includes(w))`로 같은 대소문자 문제를 가지고 있음. Medium 리스크 파일이라 별도 승인 절차로 처리 예정.
 
 ---
+
+### #19 — OCR 캐시 동시 요청 레이스 + 무음 에러
+
+**날짜:** 2026-09-04
+
+**증상 (하드닝, 실제 장애 보고는 아님):**
+
+`ocr-service.js`의 `extractTextFromImage`는 `postId` 기준으로 AsyncStorage에 결과를 캐싱하지만, 수동 새로고침과 자동 체크가 겹치는 등 같은 `postId`에 대한 호출이 거의 동시에 들어오면 둘 다 캐시 미스로 보고 OCR API를 중복 호출할 수 있었음(`readCache` → `writeCache` 사이에 원자성 없음). 또한 캐시 읽기/쓰기 실패가 `catch {}`로 완전히 무음 처리되어 있어 디버깅 시 원인 추적이 안 됨.
+
+**원인:**
+
+```js
+// 문제 코드 — 캐시 체크 후 곧바로 fetch, 동시 호출 보호 없음
+if (postId) {
+  const cache = await readCache();
+  if (cache[postId] !== undefined) return cache[postId];
+}
+// ... await fetch(...) ...
+
+// 문제 코드 — 실패해도 아무 로그 없음
+async function readCache() {
+  try { ... } catch { return {}; }
+}
+```
+
+**해결 방법:**
+
+`postId`별로 진행 중인 Promise를 `Map`에 기억해두는 single-flight 패턴 추가. 캐시 미스여도 이미 같은 `postId`로 요청이 나가 있으면 그 Promise를 그대로 재사용 — JS가 싱글스레드라 `await` 지점 사이에서만 인터리빙이 일어나므로 이 패턴으로 레이스가 완전히 닫힘.
+
+```js
+const inFlight = new Map();
+
+export async function extractTextFromImage(imageUrl, postId) {
+  if (postId) {
+    const cache = await readCache();
+    if (cache[postId] !== undefined) return cache[postId];
+    if (inFlight.has(postId)) return inFlight.get(postId);
+  }
+
+  const promise = (async () => { /* 기존 fetch~return text 로직 */ })();
+
+  if (postId) {
+    inFlight.set(postId, promise);
+    promise.finally(() => inFlight.delete(postId));
+  }
+  return promise;
+}
+```
+
+`readCache`/`writeCache`의 `catch {}`에도 `console.warn`을 추가해 다른 실패 로그(`[OCR] 요청 실패` 등)와 스타일을 통일. 동작(캐시 실패 시 빈 객체로 폴백)은 그대로 유지 — 로그만 남김.
+
+---

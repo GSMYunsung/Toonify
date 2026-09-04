@@ -5,7 +5,7 @@
 ## 순서
 
 ### 1. 정의 먼저 (+ 리스크 등급 판단)
-- `.claude/templates/feature.md` 내용을 채워서 리스크 등급(Low/Medium/High)부터 판단 (AGENTS.md 참고)
+- `.claude/guides/template-feature.md` 내용을 채워서 리스크 등급(Low/Medium/High)부터 판단 (AGENTS.md 참고)
 - **Medium/High**: 등급 판단 후 사용자 확인 필요. High면 Plan Mode로 전환해 계획 승인(ExitPlanMode)까지 받은 뒤 구현 착수
 - **Low**: 템플릿만 간단히 채우고 바로 진행 가능
 - 확인 전에는 코드 작성 금지 (Low 제외)
@@ -28,10 +28,10 @@
 - [ ] 에피소드 감지 관련이면 새 케이스 추가
 
 ### 5. 배포
-- JS만 변경 → `.claude/recipes/ota-deploy.md` 체크리스트 (배포 직전 `toon-reviewer` 자가검증 포함)
-- 네이티브 변경 → `.claude/recipes/new-build.md`
+- JS만 변경 → `.claude/guides/recipe-ota-deploy.md` 체크리스트 (배포 직전 `toon-reviewer` 자가검증 포함)
+- 네이티브 변경 → `.claude/guides/recipe-new-build.md`
 
 ### 6. 마무리
-- [ ] `TROUBLESHOOTING.md` 기록 (버그 수정 포함 시)
+- [ ] `AGENTS.md` Part 4(트러블슈팅 로그) 기록 (버그 수정 포함 시)
 - [ ] `README.md` 업데이트
 - [ ] git commit & push

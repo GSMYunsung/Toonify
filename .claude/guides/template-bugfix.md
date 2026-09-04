@@ -37,6 +37,6 @@
 - [ ] `node scripts/test-check-toons.js` 통과
 - [ ] 재현 조건으로 수동 테스트
 
-## TROUBLESHOOTING.md 기록
+## 트러블슈팅 기록 (AGENTS.md Part 4)
 - [ ] 수정 완료 후 기록
 - 기록할 내용: 증상 / 원인 / 해결 방법

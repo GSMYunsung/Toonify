@@ -11,8 +11,8 @@
     ↓
 네이티브 변경?
 (ios/, android/, 새 네이티브 패키지, app.config.js 플러그인, 환경변수 추가)
-    ├─ Yes → 새 빌드 필요 → .claude/recipes/new-build.md
-    └─ No  → JS/TS만 변경 → OTA 가능 → .claude/recipes/ota-deploy.md
+    ├─ Yes → 새 빌드 필요 → .claude/guides/recipe-new-build.md
+    └─ No  → JS/TS만 변경 → OTA 가능 → .claude/guides/recipe-ota-deploy.md
 ```
 
 ---

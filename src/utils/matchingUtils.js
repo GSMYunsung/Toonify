@@ -14,10 +14,7 @@ function buildSeriesKeys(seriesName) {
 
 function captionMatches(keyWords, minMatch, caption) {
   const tokens = new Set(
-    caption
-      .toLowerCase()
-      .split(/\s+/)
-      .map((t) => t.replace(/^[^가-힣a-zA-Z0-9]+|[^가-힣a-zA-Z0-9]+$/g, '')),
+    caption.toLowerCase().match(/[가-힣a-z]+|[0-9]+/g) || [],
   );
   const matched = keyWords.filter((w) => tokens.has(w.toLowerCase()));
   return { ok: keyWords.length > 0 && matched.length >= minMatch, matched, tokens };

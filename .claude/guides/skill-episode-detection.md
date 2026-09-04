@@ -53,7 +53,8 @@
 | 중복 화수 (동일 ep, 다른 포스트) | `alreadyCollected` + `alreadyInUnread` 체크로 스킵 |
 | 3주 이상 업데이트 없음 | `isSeriesAbandoned()` → 완결 처리 |
 | `undetectable` 툰 | `checkAllToons(forceAll: false)`에서 제외, 수동만 체크 |
-| 시리즈명에 영문 혼용 (예: `ReLIFE`) | 캡션/OCR과 대소문자 달라도 매칭 — `buildSeriesKeys`/`captionMatches`/`ocrMatches`에서 `toLowerCase()` 정규화 (TROUBLESHOOTING #18) |
+| 시리즈명에 영문 혼용 (예: `ReLIFE`) | 캡션/OCR과 대소문자 달라도 매칭 — `buildSeriesKeys`/`captionMatches`/`ocrMatches`에서 `toLowerCase()` 정규화 (AGENTS.md Part 4 `#18`) |
+| 시리즈명+화수 마커 붙여쓰기 (예: `시리즈47화`) | `captionMatches`가 한글/영문·숫자 문자종류 경계로 토큰 분리 (`match(/[가-힣a-z]+\|[0-9]+/g)`) — 공백 없이 붙여써도 매칭 (AGENTS.md Part 4 `#20`) |
 
 ---
 

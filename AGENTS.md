@@ -1282,3 +1282,43 @@ export async function extractTextFromImage(imageUrl, postId) {
 `readCache`/`writeCache`의 `catch {}`에도 `console.warn`을 추가해 다른 실패 로그(`[OCR] 요청 실패` 등)와 스타일을 통일. 동작(캐시 실패 시 빈 객체로 폴백)은 그대로 유지 — 로그만 남김.
 
 ---
+
+### #20 — 시리즈명+화수 마커 붙여쓰기 캡션 미탐지
+
+**날짜:** 2026-09-04
+
+**증상:**
+
+작가가 "시리즈47화"처럼 시리즈명과 화수 마커 사이에 공백을 안 쓰면, 캡션에 화수가 명백히 적혀 있어도 새 화수가 감지되지 않음. 캡션 매칭 실패 → OCR 폴백 → 썸네일 이미지엔 대개 시리즈명 텍스트가 없어서 OCR도 실패 → 포스트가 통째로 스킵됨. 조용한 미탐지 버그.
+
+**원인:**
+
+```js
+// 문제 코드 (captionMatches) — 공백으로만 토큰화
+const tokens = new Set(
+  caption.toLowerCase().split(/\s+/)
+    .map((t) => t.replace(/^[^가-힣a-zA-Z0-9]+|[^가-힣a-zA-Z0-9]+$/g, '')),
+);
+```
+
+`split(/\s+/)`는 공백 기준으로만 쪼개고, 뒤이은 트림은 토큰 앞/뒤의 "비 한글·영숫자" 문자만 벗겨냄. 한글·숫자·영문이 전부 허용 문자라 "시리즈47화"나 중간에 기호가 낀 "시리즈-47화" 같은 건 절대 분리되지 않아 `keyWords`의 `"시리즈"`와 문자열이 달라 매칭 실패.
+
+**해결 방법:**
+
+토큰화를 "공백 분리"에서 "한글/영문 연속 구간과 숫자 연속 구간을 별도 런으로 추출"로 변경. 룩어라운드 없이 `match`의 교대 패턴만으로 구현(Hermes/Node 양쪽 호환).
+
+```js
+function captionMatches(keyWords, minMatch, caption) {
+  const tokens = new Set(
+    caption.toLowerCase().match(/[가-힣a-z]+|[0-9]+/g) || [],
+  );
+  const matched = keyWords.filter((w) => tokens.has(w.toLowerCase()));
+  return { ok: keyWords.length > 0 && matched.length >= minMatch, matched, tokens };
+}
+```
+
+`match`가 정규식에 안 걸리는 문자(이모지, 특수문자, 공백)는 애초에 결과에 안 담기므로 기존 트림 단계가 아예 불필요해짐 — 코드가 더 짧아지면서 중간에 낀 기호까지 부가 로직 없이 자연스럽게 분리됨. `ocrMatches`는 이미 `includes()` 기반이라 이 문제에 영향 안 받아 변경 안 함.
+
+`scripts/test-check-toons.js` 케이스 10에 버그 재현 2건 추가, 기존 회귀 케이스(영문 혼용/대소문자/순수 한글/오탐 방지) 전부 그대로 통과 확인.
+
+---

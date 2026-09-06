@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { checkToon } from '../services/toon-service';
+import { __resetToonCache } from '../services/toon-store';
 import { fetchLatestPosts } from '../services/instagram-api';
 import { extractTextFromImage } from '../services/ocr-service';
 
@@ -54,6 +55,7 @@ async function seedToon(toon) {
 
 beforeEach(async () => {
   await AsyncStorage.clear();
+  __resetToonCache();
   jest.clearAllMocks();
   extractTextFromImage.mockResolvedValue(''); // 기본: OCR 빈 결과
 });

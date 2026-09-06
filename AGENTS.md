@@ -1325,3 +1325,56 @@ function captionMatches(keyWords, minMatch, caption) {
 `scripts/test-check-toons.js` 케이스 10에 버그 재현 2건 추가, 기존 회귀 케이스(영문 혼용/대소문자/순수 한글/오탐 방지) 전부 그대로 통과 확인.
 
 ---
+
+### #21 — toon-store.js AsyncStorage 동시성/무음실패/중복읽기
+
+**날짜:** 2026-09-06
+
+**증상:**
+
+`getToons()`가 호출될 때마다 `AsyncStorage.getItem` + `JSON.parse`를 매번 새로 실행하고, `addToon`/`updateToon`/`deleteToon`/`markAsRead`/`advanceEpisode`/`syncFromSupabase` 등 모든 mutation이 각자 독립적으로 "전체 읽기 → 수정 → 전체 쓰기"를 수행. 두 mutation이 겹치면(예: 새로고침 중 스와이프 삭제) 나중에 `save()`한 쪽이 먼저 것을 덮어씀. `getToons()`의 `catch { return []; }`는 실패를 로그 없이 삼켜서, AsyncStorage가 깨지면 사용자에게 "등록한 툰이 전부 사라진 것"처럼 보임.
+
+**원인:**
+
+메모리 캐시나 mutex 없이 매 호출이 AsyncStorage를 직접 왕복. JS 코드 자체는 싱글스레드지만, `await` 지점(AsyncStorage 읽기/쓰기 사이)에서 다른 mutation이 끼어들 수 있어 "체크 후 저장" 사이에 레이스가 발생.
+
+**검토한 대안:**
+
+- **AsyncStorage를 SQLite/MMKV로 교체**: 진짜 트랜잭션을 쓸 수 있지만, 이 앱 규모(개인용, 툰 수 적음)에 비해 마이그레이션 범위가 과함 — 기각.
+- **매번 새 배열을 즉시 throw**: 실패를 호출부로 전파해 화면단에서 처리하게 하는 방법도 고려했으나, 모든 호출부(여러 화면·서비스)를 다 고쳐야 해서 범위가 커짐 — 기각. 대신 기존처럼 안전한 기본값(`[]`)으로 폴백하되 로그만 추가.
+- **읽기·쓰기 둘 다 캐시로 없애기(쓰기도 배치/디바운스)**: 쓰기까지 지연시키면 앱이 강제 종료될 때 유실 위험이 커짐 — 기각. 읽기만 캐싱하고 쓰기는 매번 즉시 반영하는 절충 선택.
+
+**해결 방법:**
+
+`toon-store.js`에 모듈 스코프 인메모리 캐시(`cache`)와 Promise 체인 기반 mutex(`queue`)를 추가. 모든 mutation을 `enqueue()`로 감싸 직렬화하고, 내부 전용 `loadToons()`/`persist()`를 통해서만 캐시에 접근(공개 `getToons()`를 내부에서 재호출하면 큐가 자기 자신을 기다리는 데드락이 생기므로 분리).
+
+```js
+let cache = null;
+let queue = Promise.resolve();
+
+function enqueue(task) {
+  const result = queue.then(task, task);
+  queue = result.then(() => undefined, () => undefined);
+  return result;
+}
+
+async function loadToons() {
+  if (cache === null) {
+    try {
+      cache = JSON.parse((await AsyncStorage.getItem(STORAGE_KEY)) || "[]");
+    } catch (e) {
+      console.warn('[toon-store] 목록 읽기 실패, 빈 목록으로 시작:', e.message);
+      cache = [];
+    }
+  }
+  return cache;
+}
+```
+
+`getToons()`는 캐시를 `JSON.parse(JSON.stringify(...))`로 깊은 복사해서 반환 — 외부 호출부가 들고 있는 배열/객체가 나중 mutation으로 캐시가 바뀔 때 같이 변해버리는 걸 방지(기존에도 매번 `JSON.parse`로 새 객체를 만들어 반환하던 것과 동일한 격리 수준 유지).
+
+**남은 한계 (의도적으로 미해결):** 쓰기 비용(매 mutation마다 전체 배열 `JSON.stringify`)은 그대로다 — AsyncStorage가 키-값 저장소라 부분 업데이트가 불가능하기 때문. 읽기 중복만 없앴고, 쓰기 비용은 데이터가 많아지면 여전히 증가한다. 이 앱 규모(개인용)에선 무시할 수준이라 별도 대응 안 함.
+
+**테스트:** Jest 임시 스크립트로 동시 `addToon` 2건이 서로 안 덮어쓰는 것 직접 확인(검증 후 삭제). `checkToon.test.js`는 모듈 스코프 캐시가 테스트 간에 새는 걸 막기 위해 `__resetToonCache()` 훅을 추가하고 `beforeEach`에 연결. 전체 Jest 스위트 66개 중 64개 통과 — 나머지 2개(`복수 화수 동시 감지`, `OCR_LIMIT`)는 `git stash`로 대조한 결과 이번 변경 이전부터 이미 실패하던 별개 버그.
+
+---

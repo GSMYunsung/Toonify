@@ -17,7 +17,7 @@
 
 4. 실시간 반영 — 수정 요청 시 즉시 코드에 반영
 
-5. 보안 철저 — API 키는 `config.js`에 보관 (`.gitignore` 포함), 절대 외부 유출 금지
+5. 보안 철저 — 실제 API 키/시크릿은 `.env.local`(로컬)·EAS Secrets(빌드)에만 두고 `EXPO_PUBLIC_*` 환경변수로 주입, 레포에 값 자체를 커밋하지 않음. `config.js`는 `process.env` 참조만 담아 커밋 가능(실제 키 없음). `google-services.json`도 Firebase 설계상 앱 식별자만 담아 커밋 가능한 파일 — 보안은 Firebase Security Rules/API 키 제한이 담당 (AGENTS.md Part 4 `#3` 참고)
 
 6. JS 변경만 → OTA 배포 (`eas update --channel production`), 네이티브 변경 → 새 빌드 필요
 
@@ -77,10 +77,10 @@ toon-notifier-app/
 ├── App.js                        ← 루트: 알림 핸들러 + GestureHandlerRootView + 푸시 토큰 등록
 ├── app.config.js                 ← Expo 설정 (OTA: ON_LOAD, runtimeVersion: appVersion)
 ├── eas.json                      ← EAS 빌드 프로필 (production: autoIncrement)
-├── config.js                     ← EXPO_PUBLIC_* 환경변수 export (.gitignore 포함)
+├── config.js                     ← EXPO_PUBLIC_* 환경변수 참조만 export (실제 키 없음, 커밋 가능)
 ├── scripts/
 │   ├── check-toons.js            ← GitHub Actions 배치: 에피소드 감지 + 푸시 알림 발송
-│   └── test-check-toons.js       ← filterNewPosts 로직 테스트 (16개 케이스)
+│   └── test-check-toons.js       ← 매칭·필터링 로직 테스트 (29개 케이스)
 └── src/
     ├── constants/
     │   └── urls.js               ← API Base URL 상수 (HASDATA_BASE_URL 등)

@@ -121,7 +121,7 @@
 | 무료 한도  | 25,000회 / 월                                              |
 | 사용 파일  | `src/services/ocr-service.js`, `scripts/check-toons.js`   |
 
-> 앱과 서버 모두 동일한 ocr.space API를 사용하며, 앱에서는 `post.id` 기반 AsyncStorage 캐시를 통해 동일 포스트에 대한 반복 호출을 방지한다.
+> 앱과 서버 모두 동일한 ocr.space API를 사용하며, 앱에서는 `post.id` 기반 AsyncStorage 캐시를 통해 동일 포스트에 대한 반복 호출을 방지한다. 같은 포스트에 대한 동시 요청은 in-flight Promise 재사용(single-flight)으로 중복 API 호출을 막는다(서버는 캐시/dedup 없이 매번 새로 호출 — `filterNewPosts`가 상위에서 이미 처리한 포스트를 걸러줌).
 
 ---
 
@@ -200,7 +200,7 @@ toon-notifier-app/
 ├── config.js                     ← EXPO_PUBLIC_* 환경변수 export (.gitignore 포함)
 ├── scripts/
 │   ├── check-toons.js            ← GitHub Actions 배치: 에피소드 감지 + 푸시 알림 발송
-│   └── test-check-toons.js       ← filterNewPosts 로직 테스트 (16개 케이스)
+│   └── test-check-toons.js       ← 매칭·필터링 로직 테스트 (filterNewPosts, buildSeriesKeys, captionMatches, ocrMatches — 29개 케이스)
 └── src/
     ├── constants/
     │   └── urls.js               ← API Base URL 상수
@@ -275,7 +275,8 @@ collected 비어있음?
 
 > `keyWords`: 시리즈명에서 3자 이상 단어 우선, 없으면 가장 긴 2개  
 > `minMatch`: `min(2, keyWords.length)`  
-> 비교 시 대소문자 구분 없음 (`toLowerCase()` 정규화) — 영문/영숫자가 섞인 시리즈명(예: `ReLIFE`, `SSS급`)이 캡션·OCR 텍스트와 대소문자만 다를 때도 매칭됨. 한글은 대소문자 개념이 없어 영향 없음.
+> 비교 시 대소문자 구분 없음 (`toLowerCase()` 정규화) — 영문/영숫자가 섞인 시리즈명(예: `ReLIFE`, `SSS급`)이 캡션·OCR 텍스트와 대소문자만 다를 때도 매칭됨. 한글은 대소문자 개념이 없어 영향 없음.  
+> 캡션 토큰화는 공백이 아니라 문자종류 경계 기준(`match(/[가-힣a-z]+|[0-9]+/g)`) — "시리즈47화"처럼 시리즈명과 화수 마커를 붙여써도 매칭됨.
 
 ### 화수 추출 패턴 (`extractEpisodeNumber`)
 

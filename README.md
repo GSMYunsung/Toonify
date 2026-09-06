@@ -299,7 +299,7 @@ collected 비어있음?
 
 ## 데이터 모델
 
-### toons (Supabase + AsyncStorage)
+### toons — 로컬(AsyncStorage) 필드 전체
 
 ```js
 {
@@ -322,6 +322,25 @@ collected 비어있음?
   updatedAt: string,
 }
 ```
+
+### toons — 로컬 ↔ Supabase 필드 매핑
+
+Supabase 컬럼은 snake_case라 로컬(camelCase)과 이름이 다르고, **모든 필드가 양방향 동기화되는 건 아니다.**
+
+| 로컬 필드 | Supabase 컬럼 | 동기화 방향 |
+| --- | --- | --- |
+| `id`, `username`, `seriesName`→`series_name` | 동일 의미 | insert 시 1회 (`addToon`) |
+| `lastEpisode` → `last_episode` | 양방향 | 앱 감지·서버 배치 모두 갱신, `syncFromSupabase`로 로컬에 반영 |
+| `readEpisode` → `read_episode` | 앱 → Supabase | `advanceEpisode`, `markAsRead`에서 갱신 |
+| `hasNewEpisode` → `has_new_episode` | 양방향 | |
+| `unreadPosts` → `unread_posts` | 양방향 | |
+| `lastPostUrl` → `last_post_url` | 양방향 | |
+| `isComplete` → `is_complete` | **서버 → 앱 단방향** | 서버 배치만 씀, 앱은 `syncFromSupabase`로 읽기만 함 |
+| `lastPostId` → `last_post_id` | **서버 전용** | 서버 배치만 씀, 앱은 Supabase에 안 씀 |
+| `lastThumbnailUrl` → `last_thumbnail_url` | **서버 전용** | |
+| `lastEpisodeTitle` → `last_episode_title` | **서버 전용** | |
+| `episodeHistory`, `pendingComplete`, `undetectable` | **로컬 전용** | Supabase 컬럼 자체가 없음 |
+| (로컬에 없음) | `device_id` | **Supabase 전용** — 등록한 기기 식별용, `getDeviceId()`가 AsyncStorage에 별도 보관하고 쿼리 시에만 사용 |
 
 ### push_tokens (Supabase)
 
